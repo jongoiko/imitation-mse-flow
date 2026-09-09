@@ -10,7 +10,6 @@ from typing import Any
 import numpy as np
 import torch
 import tyro
-import wandb
 from imitation.data import download_pusht
 from imitation.data import load_pusht_zarr
 from imitation.data import Normalizer
@@ -21,6 +20,8 @@ from imitation.model import BasePolicy
 from imitation.model import build_policy
 from imitation.model import PolicyType
 from torch.utils.data import DataLoader
+
+import wandb
 
 LOGDIR_PREFIX = "exp"
 
@@ -120,7 +121,10 @@ def run_training_loop(
                     total_training_steps,
                     logger,
                 )
-            logger.log({"train/loss": float(loss.item())}, step=total_training_steps)
+            if total_training_steps % config.log_interval == 0:
+                logger.log(
+                    {"train/loss": float(loss.item())}, step=total_training_steps
+                )
 
 
 def run_training(config: TrainConfig) -> None:
