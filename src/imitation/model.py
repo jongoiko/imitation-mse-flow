@@ -1,9 +1,9 @@
-"""Model definitions for Push-T imitation policies."""
 import abc
 from typing import Literal
 from typing import TypeAlias
 
 import torch
+from einops import pack
 from einops import rearrange
 from torch import nn
 
@@ -88,7 +88,10 @@ class MSEPolicy(BasePolicy):
 class FlowMatchingPolicy(BasePolicy):
     """Predicts action chunks with a flow matching loss."""
 
-    ### TODO: IMPLEMENT FlowMatchingPolicy HERE ###
+    mlp: nn.Sequential
+    chunk_size: int
+    action_dim: int
+
     def __init__(
         self,
         state_dim: int,
@@ -97,13 +100,37 @@ class FlowMatchingPolicy(BasePolicy):
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
+        self.mlp = make_relu_mlp(
+            state_dim + chunk_size * action_dim + 1,
+            chunk_size * action_dim,
+            hidden_dims,
+        )
+        self.chunk_size = chunk_size
+        self.action_dim = action_dim
+
+    def _predict_velocity(
+        self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
+    ) -> torch.Tensor:
+        policy_input, _ = pack([state, time, action_chunk], "b *")
+        return rearrange(self.mlp(policy_input), "b (t a) -> b t a", t=self.chunk_size)
 
     def compute_loss(
         self,
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        device = state.device
+        noise = torch.randn(*action_chunk.shape).to(device)
+        batch_size = state.shape[0]
+        time = torch.rand(batch_size).to(device)
+        interpolation = (
+            time[:, None, None] * action_chunk + (1 - time[:, None, None]) * noise
+        )
+        pred_velocity = self._predict_velocity(state, time, interpolation)
+        loss = nn.functional.mse_loss(
+            pred_velocity, action_chunk - noise, reduction="sum"
+        )
+        return loss / batch_size
 
     def sample_actions(
         self,
@@ -111,7 +138,18 @@ class FlowMatchingPolicy(BasePolicy):
         *,
         num_steps: int = 10,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        batch_size = state.shape[0]
+        device = state.device
+        action_chunk = torch.randn(batch_size, self.chunk_size, self.action_dim).to(
+            device
+        )
+        with torch.no_grad():
+            for time in torch.linspace(0, 1, num_steps + 1)[:-1].to(device):
+                pred_velocity = self._predict_velocity(
+                    state, time.repeat(batch_size), action_chunk
+                )
+                action_chunk += pred_velocity / num_steps
+        return action_chunk
 
 
 PolicyType: TypeAlias = Literal["mse", "flow"]
