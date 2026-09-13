@@ -1,6 +1,7 @@
 """Dataset utilities for Push-T."""
 from __future__ import annotations
 
+import os
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -11,8 +12,23 @@ import torch
 import zarr
 from torch.utils.data import Dataset
 
+import robomimic.utils.file_utils as FileUtils
+from robomimic import DATASET_REGISTRY
+# the dataset registry can be found at robomimic/__init__.py
+
 PUSHT_URL = "https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip"
+
 ZARR_RELATIVE_PATH = Path("pusht") / "pusht_cchi_v7_replay.zarr"
+
+TASK_PATHS = {
+    "pusht": Path("pusht") / "pusht_cchi_v7_replay.zarr",
+    "robomimic/lift": Path("robomimic") / "low_dim_lift.hdf5",
+    "robomimic/can": Path("robomimic") / "low_dim_can.hdf5",
+    "robomimic/square": Path("robomimic") / "low_dim_square.hdf5",
+    "robomimic/transport": Path("robomimic") / "low_dim_transport.hdf5",
+}
+
+TASK_NAMES = list(TASK_PATHS.keys())
 
 
 @dataclass(frozen=True)
@@ -46,26 +62,38 @@ class Normalizer:
         return action * self.action_std + self.action_mean
 
 
-def download_pusht(dataset_dir: Path) -> Path:
-    """Download and extract the Push-T dataset if needed.
+def download_dataset(task_name: str, dataset_dir: Path) -> Path:
+    """Download a dataset if needed.
 
-    Returns the path to the extracted Zarr dataset.
+    Returns the path to the extracted Zarr/HDF5 dataset.
     """
+    assert task_name in TASK_NAMES, (
+        f"Unknown task {task_name}; available tasks are {TASK_NAMES}"
+    )
 
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-    zarr_path = dataset_dir / ZARR_RELATIVE_PATH
-    if zarr_path.exists():
-        return zarr_path
+    dataset_path = dataset_dir / TASK_PATHS[task_name]
+    dataset_path.parent.mkdir(parents=True, exist_ok=True)
+    if dataset_path.exists():
+        return dataset_path
 
-    zip_path = dataset_dir / "pusht.zip"
-    if not zip_path.exists():
-        print("Downloading PushT dataset...")
-        urllib.request.urlretrieve(PUSHT_URL, zip_path)
+    if task_name == "pusht":
+        zip_path = dataset_dir / "pusht.zip"
+        if not zip_path.exists():
+            print("Downloading PushT dataset...")
+            urllib.request.urlretrieve(PUSHT_URL, zip_path)
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(dataset_dir)
+        return dataset_path
 
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(dataset_dir)
-
-    return zarr_path
+    # Robomimic dataset
+    robomimic_task = task_name.split("/")[1]
+    dataset_type = "ph"  # proficient human
+    hdf5_type = "low_dim"
+    url = DATASET_REGISTRY[robomimic_task][dataset_type][hdf5_type]["url"]
+    filename = url.split("/")[-1]
+    FileUtils.download_url(url=url, download_dir=str(dataset_path.parent))
+    os.rename(dataset_dir / TASK_PATHS[task_name].parent / filename, dataset_path)
+    return dataset_path
 
 
 def load_pusht_zarr(zarr_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

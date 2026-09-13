@@ -1,4 +1,4 @@
-"""Train and evaluate a Push-T imitation policy."""
+"""Train and evaluate a behavior cloning policy."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from typing import Literal
 
 import numpy as np
 import torch
 import tyro
-from imitation.data import download_pusht
+from imitation.data import download_dataset
 from imitation.data import load_pusht_zarr
 from imitation.data import Normalizer
 from imitation.data import PushtChunkDataset
@@ -28,7 +29,15 @@ LOGDIR_PREFIX = "exp"
 
 @dataclass
 class TrainConfig:
-    # The path to download the Push-T dataset to.
+    # The task that the policy is trained and evaluated on.
+    task: Literal[
+        "pusht",
+        "robomimic/lift",
+        "robomimic/can",
+        "robomimic/square",
+        "robomimic/transport",
+    ] = "pusht"
+    # The path to download the dataset to.
     data_dir: Path = Path("data")
 
     # The policy type -- either MSE or flow.
@@ -62,7 +71,7 @@ def parse_train_config(
     args: list[str] | None = None,
     *,
     defaults: TrainConfig | None = None,
-    description: str = "Train a Push-T MLP policy.",
+    description: str = "Train a behavior cloning policy.",
 ) -> TrainConfig:
     defaults = defaults or TrainConfig()
     return tyro.cli(
@@ -132,7 +141,7 @@ def run_training(config: TrainConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    zarr_path = download_pusht(config.data_dir)
+    zarr_path = download_dataset(config.task, config.data_dir)
     states, actions, episode_ends = load_pusht_zarr(zarr_path)
     normalizer = Normalizer.from_data(states, actions)
 
