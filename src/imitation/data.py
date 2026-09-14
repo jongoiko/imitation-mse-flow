@@ -7,6 +7,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 import zarr
@@ -96,12 +97,25 @@ def download_dataset(task_name: str, dataset_dir: Path) -> Path:
     return dataset_path
 
 
-def load_pusht_zarr(zarr_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    root = zarr.open(zarr_path, mode="r")
-    states = np.asarray(root["data"]["state"][:], dtype=np.float32)
-    actions = np.asarray(root["data"]["action"][:], dtype=np.float32)
-    episode_ends = np.asarray(root["meta"]["episode_ends"][:], dtype=np.int64)
-    return states, actions, episode_ends
+def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if path.suffix == ".zarr":
+        root = zarr.open(path, mode="r")
+        states = np.asarray(root["data"]["state"][:], dtype=np.float32)
+        actions = np.asarray(root["data"]["action"][:], dtype=np.float32)
+        episode_ends = np.asarray(root["meta"]["episode_ends"][:], dtype=np.int64)
+        return states, actions, episode_ends
+    assert path.suffix == ".hdf5", (
+        "Path suffix should be .zarr (PushT) or .hdf5 (robomimic)"
+    )
+    states, actions, episode_ends = [], [], []
+    obs_keys = ["object", "robot0_eef_pos", "robot0_eef_quat", "robot0_gripper_qpos"]
+    with h5py.File(path, "r") as f:
+        for demo_idx in f["data"]:
+            demo = f["data"][demo_idx]
+            actions.append(demo["actions"][...])
+            states.append(np.hstack(tuple([demo["obs"][key] for key in obs_keys])))
+            episode_ends.append(np.argmax(demo["dones"][:]))
+    return np.vstack(states), np.vstack(actions), np.cumsum(episode_ends)
 
 
 def build_valid_indices(episode_ends: np.ndarray, chunk_size: int) -> np.ndarray:

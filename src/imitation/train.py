@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import tyro
 from imitation.data import download_dataset
-from imitation.data import load_pusht_zarr
+from imitation.data import load_demonstrations
 from imitation.data import Normalizer
 from imitation.data import PushtChunkDataset
 from imitation.evaluation import evaluate_policy
@@ -142,7 +142,7 @@ def run_training(config: TrainConfig) -> None:
     print(f"Using device: {device}")
 
     zarr_path = download_dataset(config.task, config.data_dir)
-    states, actions, episode_ends = load_pusht_zarr(zarr_path)
+    states, actions, episode_ends = load_demonstrations(zarr_path)
     normalizer = Normalizer.from_data(states, actions)
 
     dataset = PushtChunkDataset(
