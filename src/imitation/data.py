@@ -1,4 +1,4 @@
-"""Dataset utilities for Push-T."""
+"""Dataset utilities."""
 from __future__ import annotations
 
 import os
@@ -18,8 +18,6 @@ from robomimic import DATASET_REGISTRY
 # the dataset registry can be found at robomimic/__init__.py
 
 PUSHT_URL = "https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip"
-
-ZARR_RELATIVE_PATH = Path("pusht") / "pusht_cchi_v7_replay.zarr"
 
 TASK_PATHS = {
     "pusht": Path("pusht") / "pusht_cchi_v7_replay.zarr",
@@ -88,6 +86,7 @@ def download_dataset(task_name: str, dataset_dir: Path) -> Path:
 
     # Robomimic dataset
     robomimic_task = task_name.split("/")[1]
+    print(f"Downloading robomimic {robomimic_task} dataset...")
     dataset_type = "ph"  # proficient human
     hdf5_type = "low_dim"
     url = DATASET_REGISTRY[robomimic_task][dataset_type][hdf5_type]["url"]
@@ -129,7 +128,7 @@ def build_valid_indices(episode_ends: np.ndarray, chunk_size: int) -> np.ndarray
     return np.asarray(indices, dtype=np.int64)
 
 
-class PushtChunkDataset(Dataset):
+class ActionChunkDataset(Dataset):
     """Dataset of (state, action_chunk) pairs using a sliding window."""
 
     def __init__(

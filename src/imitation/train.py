@@ -11,10 +11,10 @@ from typing import Literal
 import numpy as np
 import torch
 import tyro
+from imitation.data import ActionChunkDataset
 from imitation.data import download_dataset
 from imitation.data import load_demonstrations
 from imitation.data import Normalizer
-from imitation.data import PushtChunkDataset
 from imitation.evaluation import evaluate_policy
 from imitation.evaluation import Logger
 from imitation.model import BasePolicy
@@ -145,7 +145,7 @@ def run_training(config: TrainConfig) -> None:
     states, actions, episode_ends = load_demonstrations(zarr_path)
     normalizer = Normalizer.from_data(states, actions)
 
-    dataset = PushtChunkDataset(
+    dataset = ActionChunkDataset(
         states,
         actions,
         episode_ends,
