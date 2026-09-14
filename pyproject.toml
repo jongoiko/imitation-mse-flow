@@ -1,7 +1,7 @@
 [project]
 name = "imitation-bc-fm"
 version = "0.1.0"
-description = "Imitation learning experiments with behavior cloning and flow matching"
+description = "Behavior cloning experiments with MSE and flow matching"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
