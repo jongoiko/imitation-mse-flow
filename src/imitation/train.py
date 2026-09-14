@@ -35,6 +35,7 @@ class TrainConfig:
         "robomimic/lift",
         "robomimic/can",
         "robomimic/square",
+        "robomimic/tool_hang",
         "robomimic/transport",
     ] = "pusht"
     # The path to download the dataset to.

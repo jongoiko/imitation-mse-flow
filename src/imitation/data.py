@@ -24,6 +24,7 @@ TASK_PATHS = {
     "robomimic/lift": Path("robomimic") / "low_dim_lift.hdf5",
     "robomimic/can": Path("robomimic") / "low_dim_can.hdf5",
     "robomimic/square": Path("robomimic") / "low_dim_square.hdf5",
+    "robomimic/tool_hang": Path("robomimic") / "low_dim_tool_hang.hdf5",
     "robomimic/transport": Path("robomimic") / "low_dim_transport.hdf5",
 }
 
