@@ -14,13 +14,20 @@ import gymnasium as gym
 import imageio.v2 as imageio
 import numpy as np
 import torch
-import wandb
 from imitation.data import Normalizer
+from imitation.data import ROBOMIMIC_OBS_KEYS
 from imitation.model import BasePolicy
 from PIL import Image
 
-ENV_ID = "gym_pusht/PushT-v0"
+import robomimic.utils.env_utils as EnvUtils
+import robomimic.utils.file_utils as FileUtils
+import robomimic.utils.obs_utils as ObsUtils
+import wandb
+
+
+PUSHT_ENV_ID = "gym_pusht/PushT-v0"
 NUM_EVAL_EPISODES = 100
+ROBOMIMIC_HORIZON = 400
 
 
 class Logger:
@@ -117,7 +124,136 @@ def log_checkpoint_artifact(model: BasePolicy, step: int) -> None:
     wandb.log_artifact(artifact)
 
 
+def get_action_chunk(
+    model: BasePolicy,
+    obs: np.ndarray,
+    normalizer: Normalizer,
+    device: torch.device,
+    flow_num_steps: int,
+) -> np.ndarray:
+    state = torch.from_numpy(normalizer.normalize_state(obs)).float().to(device)
+    with torch.no_grad():
+        pred_chunk = (
+            model.sample_actions(state.unsqueeze(0), num_steps=flow_num_steps)
+            .cpu()
+            .numpy()[0]
+        )
+    action_chunk = normalizer.denormalize_action(pred_chunk)
+    return action_chunk
+
+
+def run_eval_pusht(
+    model: BasePolicy,
+    normalizer: Normalizer,
+    device: torch.device,
+    chunk_size: int,
+    video_size: tuple[int, int],
+    num_video_episodes: int,
+    flow_num_steps: int,
+) -> tuple[list[float], list[wandb.Video]]:
+    rewards, videos = [], []
+    env = gym.make(PUSHT_ENV_ID, obs_type="state", render_mode="rgb_array")
+    action_low = env.action_space.low
+    action_high = env.action_space.high
+    for ep_idx in range(NUM_EVAL_EPISODES):
+        obs, _ = env.reset(seed=ep_idx)
+        done = False
+        chunk_index = chunk_size
+        action_chunk: np.ndarray | None = None
+        frames: list[np.ndarray] = []
+        max_reward = 0.0
+        save_video = ep_idx < num_video_episodes
+        while not done:
+            if action_chunk is None or chunk_index >= chunk_size:
+                action_chunk = get_action_chunk(
+                    model, obs, normalizer, device, flow_num_steps
+                )
+                action_chunk = np.clip(action_chunk, action_low, action_high)
+                chunk_index = 0
+            action = action_chunk[chunk_index]
+            obs, reward, terminated, truncated, _ = env.step(action.astype(np.float32))
+            if save_video:
+                frame = env.render()
+                frame = resize_frame(frame, video_size)
+                frames.append(frame)
+            max_reward = max(max_reward, float(reward))
+            done = terminated or truncated
+            chunk_index += 1
+        rewards.append(max_reward)
+        if save_video:
+            video = encode_video(frames, fps=20)
+            if video is not None:
+                videos.append(video)
+    env.close()
+    return rewards, videos
+
+
+def run_eval_robomimic(
+    model: BasePolicy,
+    dataset_path: Path,
+    normalizer: Normalizer,
+    device: torch.device,
+    chunk_size: int,
+    video_size: tuple[int, int],
+    num_video_episodes: int,
+    flow_num_steps: int,
+) -> tuple[list[float], list[wandb.Video]]:
+    obs_spec = dict(
+        obs=dict(
+            low_dim=["robot0_eef_pos"],
+            rgb=["agentview_image"],
+        ),
+    )
+    ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs=obs_spec)
+    env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path)
+    env = EnvUtils.create_env_from_metadata(
+        env_meta=env_meta,
+        env_name=env_meta["env_name"],
+        render=False,
+        render_offscreen=True,
+        use_image_obs=False,
+    )  # type: ignore
+    rewards, videos = [], []
+    for ep_idx in range(NUM_EVAL_EPISODES):
+        obs = env.reset()  # TODO: Use seed ep_idx to reset
+        state_dict = env.get_state()
+        # hack that is necessary for robosuite tasks for deterministic action playback
+        obs = env.reset_to(state_dict)
+        obs = np.concat(tuple([obs[key] for key in ROBOMIMIC_OBS_KEYS]))
+        chunk_index = chunk_size
+        action_chunk: np.ndarray | None = None
+        frames: list[np.ndarray] = []
+        max_reward = 0.0
+        save_video = ep_idx < num_video_episodes
+        step_num = 0
+        while not env.is_done() and step_num < ROBOMIMIC_HORIZON:
+            if action_chunk is None or chunk_index >= chunk_size:
+                action_chunk = get_action_chunk(
+                    model, obs, normalizer, device, flow_num_steps
+                )
+                action_chunk = np.clip(action_chunk, -1, 1)
+                chunk_index = 0
+            action = action_chunk[chunk_index]
+            obs, reward, _, _ = env.step(action.astype(np.float32))
+            obs = np.concat(tuple([obs[key] for key in ROBOMIMIC_OBS_KEYS]))
+            if save_video:
+                frame = env.render(
+                    "rgb_array", height=video_size[1], width=video_size[0]
+                )
+                frames.append(frame)
+            max_reward = max(max_reward, float(reward))
+            chunk_index += 1
+            step_num += 1
+        rewards.append(max_reward)
+        if save_video:
+            video = encode_video(frames, fps=20)
+            if video is not None:
+                videos.append(video)
+    return rewards, videos
+
+
 def evaluate_policy(
+    dataset_path: Path,
     model: BasePolicy,
     normalizer: Normalizer,
     device: torch.device,
@@ -128,9 +264,9 @@ def evaluate_policy(
     step: int,
     logger: Logger,
 ) -> None:
-    """Evaluate a policy in the Push-T environment and log results to Weights & Biases.
+    """Evaluate a policy in environment and log results to Weights & Biases.
 
-    This function runs a fixed number of evaluation episodes in the Push-T gym
+    This function runs a fixed number of evaluation episodes in a gym
     environment using the provided policy. It normalizes observations with the
     given normalizer, requests a chunk of actions from the policy (optionally
     using multiple sampling steps for flow-based policies), and executes those
@@ -157,58 +293,27 @@ def evaluate_policy(
         logger: Logger for logging metrics.
     """
     model.eval()
-    rewards: list[float] = []
-    videos: list[wandb.Video] = []
-
-    env = gym.make(ENV_ID, obs_type="state", render_mode="rgb_array")
-    action_low = env.action_space.low
-    action_high = env.action_space.high
-
-    for ep_idx in range(NUM_EVAL_EPISODES):
-        obs, _ = env.reset(seed=ep_idx)
-        done = False
-        chunk_index = chunk_size
-        action_chunk: np.ndarray | None = None
-        frames: list[np.ndarray] = []
-        max_reward = 0.0
-        save_video = ep_idx < num_video_episodes
-
-        while not done:
-            if action_chunk is None or chunk_index >= chunk_size:
-                state = (
-                    torch.from_numpy(normalizer.normalize_state(obs)).float().to(device)
-                )
-                with torch.no_grad():
-                    pred_chunk = (
-                        model.sample_actions(
-                            state.unsqueeze(0), num_steps=flow_num_steps
-                        )
-                        .cpu()
-                        .numpy()[0]
-                    )
-                action_chunk = normalizer.denormalize_action(pred_chunk)
-                action_chunk = np.clip(action_chunk, action_low, action_high)
-                chunk_index = 0
-
-            action = action_chunk[chunk_index]
-            obs, reward, terminated, truncated, info = env.step(
-                action.astype(np.float32)
-            )
-            if save_video:
-                frame = env.render()
-                frame = resize_frame(frame, video_size)
-                frames.append(frame)
-            max_reward = max(max_reward, float(reward))
-            done = terminated or truncated
-            chunk_index += 1
-
-        rewards.append(max_reward)
-        if save_video:
-            video = encode_video(frames, fps=20)
-            if video is not None:
-                videos.append(video)
-
-    env.close()
+    if dataset_path.suffix == ".zarr":  # PushT
+        rewards, videos = run_eval_pusht(
+            model,
+            normalizer,
+            device,
+            chunk_size,
+            video_size,
+            num_video_episodes,
+            flow_num_steps,
+        )
+    else:  # robomimic
+        rewards, videos = run_eval_robomimic(
+            model,
+            dataset_path,
+            normalizer,
+            device,
+            chunk_size,
+            video_size,
+            num_video_episodes,
+            flow_num_steps,
+        )
     log_data: dict[str, float | wandb.Video] = {
         "eval/mean_reward": float(np.mean(rewards))
     }

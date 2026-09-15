@@ -30,6 +30,13 @@ TASK_PATHS = {
 
 TASK_NAMES = list(TASK_PATHS.keys())
 
+ROBOMIMIC_OBS_KEYS = [
+    "object",
+    "robot0_eef_pos",
+    "robot0_eef_quat",
+    "robot0_gripper_qpos",
+]
+
 
 @dataclass(frozen=True)
 class Normalizer:
@@ -108,12 +115,13 @@ def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
         "Path suffix should be .zarr (PushT) or .hdf5 (robomimic)"
     )
     states, actions, episode_ends = [], [], []
-    obs_keys = ["object", "robot0_eef_pos", "robot0_eef_quat", "robot0_gripper_qpos"]
     with h5py.File(path, "r") as f:
         for demo_idx in f["data"]:
             demo = f["data"][demo_idx]
             actions.append(demo["actions"][...])
-            states.append(np.hstack(tuple([demo["obs"][key] for key in obs_keys])))
+            states.append(
+                np.hstack(tuple([demo["obs"][key] for key in ROBOMIMIC_OBS_KEYS]))
+            )
             episode_ends.append(np.argmax(demo["dones"][:]))
     return np.vstack(states), np.vstack(actions), np.cumsum(episode_ends)
 

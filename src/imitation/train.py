@@ -99,6 +99,7 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
 
 def run_training_loop(
     config: TrainConfig,
+    dataset_path: Path,
     loader: DataLoader,
     model: BasePolicy,
     normalizer: Normalizer,
@@ -121,6 +122,7 @@ def run_training_loop(
             if total_training_steps % config.eval_interval == 0:
                 model.eval()
                 evaluate_policy(
+                    dataset_path,
                     model,
                     normalizer,
                     device,
@@ -142,8 +144,8 @@ def run_training(config: TrainConfig) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    zarr_path = download_dataset(config.task, config.data_dir)
-    states, actions, episode_ends = load_demonstrations(zarr_path)
+    dataset_path = download_dataset(config.task, config.data_dir)
+    states, actions, episode_ends = load_demonstrations(dataset_path)
     normalizer = Normalizer.from_data(states, actions)
 
     dataset = ActionChunkDataset(
@@ -178,7 +180,7 @@ def run_training(config: TrainConfig) -> None:
         project=config.wandb_project, config=config_to_dict(config), name=exp_name
     )
     logger = Logger(log_dir)
-    run_training_loop(config, loader, model, normalizer, logger, device)
+    run_training_loop(config, dataset_path, loader, model, normalizer, logger, device)
     logger.dump_logs()
 
 
