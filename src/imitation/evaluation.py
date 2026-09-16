@@ -226,7 +226,11 @@ def run_eval_robomimic(
         max_reward = 0.0
         save_video = ep_idx < num_video_episodes
         step_num = 0
-        while not env.is_done() and step_num < ROBOMIMIC_HORIZON:
+        while (
+            not env.is_done()
+            and not env.is_success()["task"]
+            and step_num < ROBOMIMIC_HORIZON
+        ):
             if action_chunk is None or chunk_index >= chunk_size:
                 action_chunk = get_action_chunk(
                     model, obs, normalizer, device, flow_num_steps
