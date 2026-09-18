@@ -150,8 +150,8 @@ def run_eval_pusht(
     video_size: tuple[int, int],
     num_video_episodes: int,
     flow_num_steps: int,
-) -> tuple[list[float], list[wandb.Video]]:
-    rewards, videos = [], []
+) -> tuple[list[bool], list[float], list[wandb.Video]]:
+    successes, rewards, videos = [], [], []
     env = gym.make(PUSHT_ENV_ID, obs_type="state", render_mode="rgb_array")
     action_low = env.action_space.low
     action_high = env.action_space.high
@@ -163,6 +163,7 @@ def run_eval_pusht(
         frames: list[np.ndarray] = []
         max_reward = 0.0
         save_video = ep_idx < num_video_episodes
+        terminated = False
         while not done:
             if action_chunk is None or chunk_index >= chunk_size:
                 action_chunk = get_action_chunk(
@@ -179,13 +180,14 @@ def run_eval_pusht(
             max_reward = max(max_reward, float(reward))
             done = terminated or truncated
             chunk_index += 1
+        successes.append(terminated)
         rewards.append(max_reward)
         if save_video:
             video = encode_video(frames, fps=20)
             if video is not None:
                 videos.append(video)
     env.close()
-    return rewards, videos
+    return successes, rewards, videos
 
 
 def run_eval_robomimic(
@@ -197,7 +199,7 @@ def run_eval_robomimic(
     video_size: tuple[int, int],
     num_video_episodes: int,
     flow_num_steps: int,
-) -> tuple[list[float], list[wandb.Video]]:
+) -> tuple[list[bool], list[float], list[wandb.Video]]:
     obs_spec = dict(
         obs=dict(
             low_dim=["robot0_eef_pos"],
@@ -213,7 +215,7 @@ def run_eval_robomimic(
         render_offscreen=True,
         use_image_obs=False,
     )  # type: ignore
-    rewards, videos = [], []
+    successes, rewards, videos = [], [], []
     for ep_idx in range(NUM_EVAL_EPISODES):
         obs = env.reset()  # TODO: Use seed ep_idx to reset
         state_dict = env.get_state()
@@ -248,12 +250,13 @@ def run_eval_robomimic(
             max_reward = max(max_reward, float(reward))
             chunk_index += 1
             step_num += 1
+        successes.append(env.is_success()["task"])
         rewards.append(max_reward)
         if save_video:
             video = encode_video(frames, fps=20)
             if video is not None:
                 videos.append(video)
-    return rewards, videos
+    return successes, rewards, videos
 
 
 def evaluate_policy(
@@ -298,7 +301,7 @@ def evaluate_policy(
     """
     model.eval()
     if dataset_path.suffix == ".zarr":  # PushT
-        rewards, videos = run_eval_pusht(
+        successes, rewards, videos = run_eval_pusht(
             model,
             normalizer,
             device,
@@ -308,7 +311,7 @@ def evaluate_policy(
             flow_num_steps,
         )
     else:  # robomimic
-        rewards, videos = run_eval_robomimic(
+        successes, rewards, videos = run_eval_robomimic(
             model,
             dataset_path,
             normalizer,
@@ -319,7 +322,8 @@ def evaluate_policy(
             flow_num_steps,
         )
     log_data: dict[str, float | wandb.Video] = {
-        "eval/mean_reward": float(np.mean(rewards))
+        "eval/mean_reward": float(np.mean(rewards)),
+        "eval/success_rate": sum(successes) / len(successes),
     }
     for idx, video in enumerate(videos):
         log_data[f"eval/rollout_ep{idx}"] = video
