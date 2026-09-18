@@ -11,6 +11,10 @@ from torch import nn
 class BasePolicy(nn.Module, metaclass=abc.ABCMeta):
     """Base class for action chunking policies."""
 
+    state_dim: int
+    action_dim: int
+    chunk_size: int
+
     def __init__(self, state_dim: int, action_dim: int, chunk_size: int) -> None:
         super().__init__()
         self.state_dim = state_dim
@@ -48,7 +52,6 @@ class MSEPolicy(BasePolicy):
     """Predicts action chunks with an MSE loss."""
 
     mlp: nn.Sequential
-    chunk_size: int
 
     def __init__(
         self,
@@ -59,7 +62,6 @@ class MSEPolicy(BasePolicy):
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
         self.mlp = make_relu_mlp(state_dim, chunk_size * action_dim, hidden_dims)
-        self.chunk_size = chunk_size
 
     def compute_loss(
         self,
@@ -89,8 +91,6 @@ class FlowMatchingPolicy(BasePolicy):
     """Predicts action chunks with a flow matching loss."""
 
     mlp: nn.Sequential
-    chunk_size: int
-    action_dim: int
 
     def __init__(
         self,
@@ -105,8 +105,6 @@ class FlowMatchingPolicy(BasePolicy):
             chunk_size * action_dim,
             hidden_dims,
         )
-        self.chunk_size = chunk_size
-        self.action_dim = action_dim
 
     def _predict_velocity(
         self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
