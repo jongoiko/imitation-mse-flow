@@ -27,7 +27,7 @@ import wandb
 
 PUSHT_ENV_ID = "gym_pusht/PushT-v0"
 NUM_EVAL_EPISODES = 100
-ROBOMIMIC_HORIZON = 400
+ROBOMIMIC_HORIZON = 700
 
 
 class Logger:
