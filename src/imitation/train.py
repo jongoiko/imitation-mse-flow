@@ -176,6 +176,7 @@ def run_training(config: TrainConfig) -> None:
         hidden_dims=config.hidden_dims,
     ).to(device)
     model: BasePolicy = torch.compile(model)  # type: ignore
+    model.compute_loss = torch.compile(model.compute_loss)
 
     exp_name = f"seed_{config.seed}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if config.exp_name is not None:
