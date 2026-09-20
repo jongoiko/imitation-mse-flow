@@ -1,4 +1,4 @@
-"""Evaluation utilities for Push-T policies."""
+"""Evaluation utilities for behavior cloning policies."""
 from __future__ import annotations
 
 import copy
