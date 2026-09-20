@@ -33,8 +33,7 @@ ROBOMIMIC_HORIZON = 700
 class Logger:
     """Logger for logging metrics."""
 
-    rows: list
-    header: None | list
+    rows: list[dict]
 
     CSV_DISALLOWED_TYPES = (wandb.Image, wandb.Video, wandb.Histogram)
 
@@ -44,30 +43,26 @@ class Logger:
         path.mkdir(parents=True)
         self.path = path
         self.csv_path = path / "log.csv"
-        self.header = None
         self.rows = []
 
     def log(self, row: dict[str, Any], step: int) -> None:
         row["step"] = step
-        if self.header is None:
-            self.header = [
-                k
-                for k, v in row.items()
-                if not isinstance(v, self.CSV_DISALLOWED_TYPES)
-            ]
-            with self.csv_path.open("w") as f:
-                f.write(",".join(self.header) + "\n")
-        filtered_row = {
-            k: v for k, v in row.items() if not isinstance(v, self.CSV_DISALLOWED_TYPES)
-        }
-        with self.csv_path.open("a") as f:
-            f.write(
-                ",".join([str(filtered_row.get(k, "")) for k in self.header]) + "\n"
-            )
         wandb.log(row, step=step)
         self.rows.append(copy.deepcopy(row))
 
     def dump_logs(self) -> None:
+        fields = set(
+            k
+            for row in self.rows
+            for k, v in row.items()
+            if not isinstance(v, self.CSV_DISALLOWED_TYPES)
+        )
+        fields = list(fields)
+        with self.csv_path.open("w") as f:
+            f.write(",".join(fields) + "\n")
+            for row in self.rows:
+                filtered_row = [str(row.get(field, "")) for field in fields]
+                f.write(",".join(filtered_row) + "\n")
         wandb_dir = Path(wandb.run.dir).parent
         wandb.finish()
         shutil.copytree(wandb_dir, self.path / "wandb_out")
