@@ -105,7 +105,7 @@ def run_training_loop(
     normalizer: Normalizer,
     logger: Logger,
     device: torch.device,
-) -> None:
+) -> int:
     optimizer = torch.optim.AdamW(
         model.parameters(), config.lr, weight_decay=config.weight_decay
     )
@@ -137,6 +137,7 @@ def run_training_loop(
                 logger.log(
                     {"train/loss": float(loss.item())}, step=total_training_steps
                 )
+    return total_training_steps
 
 
 def run_training(config: TrainConfig) -> None:
@@ -180,7 +181,22 @@ def run_training(config: TrainConfig) -> None:
         project=config.wandb_project, config=config_to_dict(config), name=exp_name
     )
     logger = Logger(log_dir)
-    run_training_loop(config, dataset_path, loader, model, normalizer, logger, device)
+    total_training_steps = run_training_loop(
+        config, dataset_path, loader, model, normalizer, logger, device
+    )
+    model.eval()
+    evaluate_policy(
+        dataset_path,
+        model,
+        normalizer,
+        device,
+        config.chunk_size,
+        config.video_size,
+        config.num_video_episodes,
+        config.flow_num_steps,
+        total_training_steps,
+        logger,
+    )
     logger.dump_logs()
 
 
