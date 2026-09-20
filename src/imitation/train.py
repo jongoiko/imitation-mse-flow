@@ -47,16 +47,21 @@ class TrainConfig:
     flow_num_steps: int = 10
     # The action chunk size.
     chunk_size: int = 8
-
+    # The batch size.
     batch_size: int = 512
+    # The AdamW learning rate.
     lr: float = 3e-4
+    # The AdamW weight decay.
     weight_decay: float = 0.0
+    # The number and size of MLP hidden layers.
     hidden_dims: tuple[int, ...] = (256, 256, 256)
     # The number of epochs to train for.
     num_epochs: int = 3000
     # How often to run evaluation, measured in training steps.
     eval_interval: int = 100_000
+    # How many videos to record during evaluation.
     num_video_episodes: int = 5
+    # The size of recorded rollout videos.
     video_size: tuple[int, int] = (256, 256)
     # How often to log training metrics, measured in training steps.
     log_interval: int = 200
