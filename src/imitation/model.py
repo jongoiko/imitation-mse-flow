@@ -81,9 +81,10 @@ class MSEPolicy(BasePolicy):
         *,
         num_steps: int = 10,
     ) -> torch.Tensor:
-        pred_action_chunk = rearrange(
-            self.mlp(state), "b (t a) -> b t a", t=self.chunk_size
-        )
+        with torch.no_grad():
+            pred_action_chunk = rearrange(
+                self.mlp(state), "b (t a) -> b t a", t=self.chunk_size
+            )
         return pred_action_chunk
 
 
