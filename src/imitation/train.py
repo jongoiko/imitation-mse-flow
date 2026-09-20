@@ -77,6 +77,10 @@ def parse_train_config(
     defaults = defaults or TrainConfig()
     return tyro.cli(
         TrainConfig,
+        config=(
+            tyro.conf.UsePythonSyntaxForLiteralCollections,
+            tyro.conf.FlagConversionOff,
+        ),
         args=args,
         default=defaults,
         description=description,
