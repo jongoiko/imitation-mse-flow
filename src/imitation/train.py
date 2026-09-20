@@ -48,18 +48,18 @@ class TrainConfig:
     # The action chunk size.
     chunk_size: int = 8
 
-    batch_size: int = 128
+    batch_size: int = 512
     lr: float = 3e-4
     weight_decay: float = 0.0
     hidden_dims: tuple[int, ...] = (256, 256, 256)
     # The number of epochs to train for.
-    num_epochs: int = 400
+    num_epochs: int = 3000
     # How often to run evaluation, measured in training steps.
-    eval_interval: int = 10_000
+    eval_interval: int = 100_000
     num_video_episodes: int = 5
     video_size: tuple[int, int] = (256, 256)
     # How often to log training metrics, measured in training steps.
-    log_interval: int = 100
+    log_interval: int = 200
     # Random seed.
     seed: int = 42
     # WandB project name.
