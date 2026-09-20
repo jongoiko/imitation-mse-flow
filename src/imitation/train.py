@@ -119,8 +119,8 @@ def run_training_loop(
         model.parameters(), config.lr, weight_decay=config.weight_decay
     )
     total_training_steps = 0
+    model.train()
     for _ in range(config.num_epochs):
-        model.train()
         for batch in loader:
             state, action_chunk = batch
             optimizer.zero_grad()
@@ -142,6 +142,7 @@ def run_training_loop(
                     total_training_steps,
                     logger,
                 )
+                model.train()
             if total_training_steps % config.log_interval == 0:
                 logger.log(
                     {"train/loss": float(loss.item())}, step=total_training_steps
