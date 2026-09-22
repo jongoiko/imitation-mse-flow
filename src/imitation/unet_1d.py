@@ -134,8 +134,6 @@ class ConditionalUnet1D(nn.Module):
         cond_predict_scale: bool = True,
     ):
         super().__init__()
-        all_dims = [input_dim] + list(down_dims)
-        start_dim = down_dims[0]
         flow_time_encoder = nn.Sequential(
             SinusoidalPosEmb(flow_time_embed_dim),
             nn.Linear(flow_time_embed_dim, flow_time_embed_dim * 4),
@@ -145,6 +143,7 @@ class ConditionalUnet1D(nn.Module):
         cond_dim = (
             flow_time_embed_dim if cond_dim is None else cond_dim + flow_time_embed_dim
         )
+        all_dims = [input_dim] + list(down_dims)
         in_out = list(zip(all_dims[:-1], all_dims[1:]))
         down_modules = nn.ModuleList([])
         for ind, (dim_in, dim_out) in enumerate(in_out):
@@ -197,7 +196,6 @@ class ConditionalUnet1D(nn.Module):
 
         up_modules = nn.ModuleList([])
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
-            is_last = ind >= (len(in_out) - 1)
             up_modules.append(
                 nn.ModuleList(
                     [
@@ -217,11 +215,12 @@ class ConditionalUnet1D(nn.Module):
                             n_groups=n_groups,
                             cond_predict_scale=cond_predict_scale,
                         ),
-                        Upsample1D(dim_in) if not is_last else nn.Identity(),
+                        Upsample1D(dim_in),
                     ]
                 )
             )
 
+        start_dim = 2 * down_dims[0]
         final_conv = nn.Sequential(
             Conv1DBlock(start_dim, start_dim, kernel_size=kernel_size),
             nn.Conv1d(start_dim, input_dim, 1),
@@ -262,6 +261,7 @@ class ConditionalUnet1D(nn.Module):
             x = resnet(x, global_feature)
             x = resnet2(x, global_feature)
             x = upsample(x)
+        x, _ = einops.pack([x, h.pop()], "b * horizon")
         x = self.final_conv(x)
         x = einops.rearrange(x, "b t h -> b h t")
         return x
