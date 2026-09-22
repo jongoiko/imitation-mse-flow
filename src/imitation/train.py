@@ -189,6 +189,10 @@ def run_training(config: TrainConfig) -> None:
         hidden_dims=config.hidden_dims,
     ).to(device)
     model: BasePolicyModel = torch.compile(model)  # type: ignore
+    total_trainable_params = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    print(f"Policy has {total_trainable_params:,} trainable parameters")
 
     exp_name = f"seed_{config.seed}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if config.exp_name is not None:
