@@ -1,15 +1,45 @@
 """
-1D UNet implementation for action chunk flow policy.
-Inspired by Diffusion Policy, see
+Velocity/Flow prediction architectures for the flow matching policy.
+Notably includes a 1D UNet implementation inspired by Diffusion Policy, see
 https://github.com/real-stanford/diffusion_policy/blob/main/diffusion_policy/model/diffusion/
 """
+import abc
 import math
+from typing import Any
 
 import einops
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 from torch import Tensor
+
+
+class BaseVelocityPredictor(nn.Module, metaclass=abc.ABCMeta):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    @abc.abstractmethod
+    def predict_velocity(
+        self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
+    ) -> Tensor:
+        """Predict flow velocity given the state, time in [0, 1] and noised action chunk"""
+
+
+class MLPVelocityPredictor(BaseVelocityPredictor):
+    mlp: nn.Module
+
+    def __init__(self, mlp: nn.Module):
+        super().__init__()
+        self.mlp = mlp
+
+    def predict_velocity(
+        self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
+    ) -> torch.Tensor:
+        chunk_size = action_chunk.shape[1]
+        policy_input, _ = einops.pack([state, time, action_chunk], "b *")
+        return einops.rearrange(
+            self.mlp(policy_input), "b (t a) -> b t a", t=chunk_size
+        )
 
 
 class Downsample1D(nn.Module):
@@ -120,7 +150,7 @@ class ConditionalResidualBlock1D(nn.Module):
         return out
 
 
-class ConditionalUnet1D(nn.Module):
+class ConditionalUnet1D(BaseVelocityPredictor):
     """1D UNet with conditioning."""
 
     def __init__(
@@ -128,7 +158,7 @@ class ConditionalUnet1D(nn.Module):
         input_dim: int,
         cond_dim: int | None = None,
         flow_time_embed_dim: int = 256,
-        down_dims: list[int] = [256, 512, 1024],
+        down_dims: tuple[int, ...] = (256, 512, 1024),
         kernel_size: int = 3,
         n_groups: int = 8,
         cond_predict_scale: bool = True,
@@ -265,3 +295,8 @@ class ConditionalUnet1D(nn.Module):
         x = self.final_conv(x)
         x = einops.rearrange(x, "b t h -> b h t")
         return x
+
+    def predict_velocity(
+        self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
+    ) -> torch.Tensor:
+        return self(action_chunk, time, global_cond=state)

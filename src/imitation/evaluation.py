@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from imitation.data import Normalizer
 from imitation.data import ROBOMIMIC_OBS_KEYS
-from imitation.model import BasePolicy
+from imitation.model import BasePolicyModel
 from PIL import Image
 
 import robomimic.utils.env_utils as EnvUtils
@@ -100,7 +100,7 @@ def encode_video(frames: list[np.ndarray], fps: int = 20) -> wandb.Video | None:
             pass
 
 
-def log_checkpoint_artifact(model: BasePolicy, step: int) -> None:
+def log_checkpoint_artifact(model: BasePolicyModel, step: int) -> None:
     if wandb.run is None:
         raise RuntimeError("wandb.init did not create a run.")
 
@@ -120,7 +120,7 @@ def log_checkpoint_artifact(model: BasePolicy, step: int) -> None:
 
 
 def get_action_chunk(
-    model: BasePolicy,
+    model: BasePolicyModel,
     obs: np.ndarray,
     normalizer: Normalizer,
     device: torch.device,
@@ -138,7 +138,7 @@ def get_action_chunk(
 
 
 def run_eval_pusht(
-    model: BasePolicy,
+    model: BasePolicyModel,
     normalizer: Normalizer,
     device: torch.device,
     chunk_size: int,
@@ -186,7 +186,7 @@ def run_eval_pusht(
 
 
 def run_eval_robomimic(
-    model: BasePolicy,
+    model: BasePolicyModel,
     dataset_path: Path,
     normalizer: Normalizer,
     device: torch.device,
@@ -256,7 +256,7 @@ def run_eval_robomimic(
 
 def evaluate_policy(
     dataset_path: Path,
-    model: BasePolicy,
+    model: BasePolicyModel,
     normalizer: Normalizer,
     device: torch.device,
     chunk_size: int,

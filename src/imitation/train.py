@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,9 +18,10 @@ from imitation.data import load_demonstrations
 from imitation.data import Normalizer
 from imitation.evaluation import evaluate_policy
 from imitation.evaluation import Logger
-from imitation.model import BasePolicy
+from imitation.model import BasePolicyModel
 from imitation.model import build_policy
-from imitation.model import PolicyType
+from imitation.model import FlowPolicy
+from imitation.model import MSEPolicy
 from torch.utils.data import DataLoader
 
 import wandb
@@ -40,11 +42,8 @@ class TrainConfig:
     ] = "pusht"
     # The path to download the dataset to.
     data_dir: Path = Path("data")
-
     # The policy type -- either MSE or flow.
-    policy_type: PolicyType = "mse"
-    # The number of denoising steps to use for the flow policy (has no effect for the MSE policy).
-    flow_num_steps: int = 10
+    policy: MSEPolicy | FlowPolicy = field(default_factory=MSEPolicy)
     # The action chunk size.
     chunk_size: int = 8
     # The batch size.
@@ -53,7 +52,9 @@ class TrainConfig:
     lr: float = 3e-4
     # The AdamW weight decay.
     weight_decay: float = 0.0
-    # The number and size of MLP hidden layers.
+    # The number and size of hidden layers: if using an MLP, then these are the
+    # hidden layer sizes, and if using a 1D UNet, these are the downsampling
+    # dimensions.
     hidden_dims: tuple[int, ...] = (256, 256, 256)
     # The number of epochs to train for.
     num_epochs: int = 3000
@@ -110,7 +111,7 @@ def run_training_loop(
     config: TrainConfig,
     dataset_path: Path,
     loader: DataLoader,
-    model: BasePolicy,
+    model: BasePolicyModel,
     normalizer: Normalizer,
     logger: Logger,
     device: torch.device,
@@ -131,6 +132,11 @@ def run_training_loop(
             total_training_steps += 1
             if total_training_steps % config.eval_interval == 0:
                 model.eval()
+                num_flow_steps = (
+                    config.policy.flow_num_steps
+                    if isinstance(config.policy, FlowPolicy)
+                    else 0
+                )
                 evaluate_policy(
                     dataset_path,
                     model,
@@ -139,7 +145,7 @@ def run_training_loop(
                     config.chunk_size,
                     config.video_size,
                     config.num_video_episodes,
-                    config.flow_num_steps,
+                    num_flow_steps,
                     total_training_steps,
                     logger,
                 )
@@ -176,13 +182,13 @@ def run_training(config: TrainConfig) -> None:
     )
 
     model = build_policy(
-        config.policy_type,
+        config.policy,
         state_dim=states.shape[1],
         action_dim=actions.shape[1],
         chunk_size=config.chunk_size,
         hidden_dims=config.hidden_dims,
     ).to(device)
-    model: BasePolicy = torch.compile(model)  # type: ignore
+    model: BasePolicyModel = torch.compile(model)  # type: ignore
 
     exp_name = f"seed_{config.seed}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if config.exp_name is not None:
@@ -204,7 +210,7 @@ def run_training(config: TrainConfig) -> None:
         config.chunk_size,
         config.video_size,
         config.num_video_episodes,
-        config.flow_num_steps,
+        config.policy.flow_num_steps if isinstance(config.policy, FlowPolicy) else 0,
         total_training_steps,
         logger,
     )

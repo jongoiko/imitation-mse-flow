@@ -1,14 +1,16 @@
 import abc
+from dataclasses import dataclass
 from typing import Literal
-from typing import TypeAlias
 
 import torch
-from einops import pack
 from einops import rearrange
+from imitation.flow_architectures import BaseVelocityPredictor
+from imitation.flow_architectures import ConditionalUnet1D
+from imitation.flow_architectures import MLPVelocityPredictor
 from torch import nn
 
 
-class BasePolicy(nn.Module, metaclass=abc.ABCMeta):
+class BasePolicyModel(nn.Module, metaclass=abc.ABCMeta):
     """Base class for action chunking policies."""
 
     state_dim: int
@@ -48,7 +50,7 @@ def make_relu_mlp(
     return nn.Sequential(*layers[:-1])
 
 
-class MSEPolicy(BasePolicy):
+class MSEPolicyModel(BasePolicyModel):
     """Predicts action chunks with an MSE loss."""
 
     mlp: nn.Sequential
@@ -88,30 +90,20 @@ class MSEPolicy(BasePolicy):
         return pred_action_chunk
 
 
-class FlowMatchingPolicy(BasePolicy):
+class FlowMatchingPolicyModel(BasePolicyModel):
     """Predicts action chunks with a flow matching loss."""
 
-    mlp: nn.Sequential
+    vel_predictor: BaseVelocityPredictor
 
     def __init__(
         self,
+        vel_predictor: BaseVelocityPredictor,
         state_dim: int,
         action_dim: int,
         chunk_size: int,
-        hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
-        self.mlp = make_relu_mlp(
-            state_dim + chunk_size * action_dim + 1,
-            chunk_size * action_dim,
-            hidden_dims,
-        )
-
-    def _predict_velocity(
-        self, state: torch.Tensor, time: torch.Tensor, action_chunk: torch.Tensor
-    ) -> torch.Tensor:
-        policy_input, _ = pack([state, time, action_chunk], "b *")
-        return rearrange(self.mlp(policy_input), "b (t a) -> b t a", t=self.chunk_size)
+        self.vel_predictor = vel_predictor
 
     def compute_loss(
         self,
@@ -125,7 +117,7 @@ class FlowMatchingPolicy(BasePolicy):
         interpolation = (
             time[:, None, None] * action_chunk + (1 - time[:, None, None]) * noise
         )
-        pred_velocity = self._predict_velocity(state, time, interpolation)
+        pred_velocity = self.vel_predictor.predict_velocity(state, time, interpolation)
         loss = nn.functional.mse_loss(
             pred_velocity, action_chunk - noise, reduction="sum"
         )
@@ -144,36 +136,71 @@ class FlowMatchingPolicy(BasePolicy):
         )
         with torch.no_grad():
             for time in torch.linspace(0, 1, num_steps + 1)[:-1].to(device):
-                pred_velocity = self._predict_velocity(
+                pred_velocity = self.vel_predictor.predict_velocity(
                     state, time.repeat(batch_size), action_chunk
                 )
                 action_chunk += pred_velocity / num_steps
         return action_chunk
 
 
-PolicyType: TypeAlias = Literal["mse", "flow"]
+@dataclass
+class FlowPolicy:
+    """Flow policy."""
+
+    # The number of denoising steps to use for the flow policy.
+    flow_num_steps: int = 10
+    # Architecture.
+    architecture: Literal["mlp", "unet"] = "mlp"
+    # The dimension of the time embedding vectors (for UNet).
+    time_embed_dim: int = 128
+    # The size of the 1D convolution kernels (for UNet).
+    conv_kernel_size: int = 3
+    # The number of groups for GroupNorm layers (for UNet).
+    groupnorm_n_groups: int = 8
+    # Whether to predict or not the scale (\gamma) for FiLM conditioning (for UNet).
+    cond_predict_scale: bool = True
+
+
+@dataclass
+class MSEPolicy:
+    """MSE (mean squared error) policy."""
 
 
 def build_policy(
-    policy_type: PolicyType,
+    policy_config: MSEPolicy | FlowPolicy,
     *,
     state_dim: int,
     action_dim: int,
     chunk_size: int,
     hidden_dims: tuple[int, ...] = (128, 128),
-) -> BasePolicy:
-    if policy_type == "mse":
-        return MSEPolicy(
+) -> BasePolicyModel:
+    if isinstance(policy_config, MSEPolicy):
+        return MSEPolicyModel(
             state_dim=state_dim,
             action_dim=action_dim,
             chunk_size=chunk_size,
             hidden_dims=hidden_dims,
         )
-    if policy_type == "flow":
-        return FlowMatchingPolicy(
-            state_dim=state_dim,
-            action_dim=action_dim,
-            chunk_size=chunk_size,
-            hidden_dims=hidden_dims,
+    if policy_config.architecture == "mlp":
+        mlp = make_relu_mlp(
+            state_dim + chunk_size * action_dim + 1,
+            chunk_size * action_dim,
+            hidden_dims,
         )
-    raise ValueError(f"Unknown policy type: {policy_type}")
+        predictor = MLPVelocityPredictor(mlp)
+    else:
+        predictor = ConditionalUnet1D(
+            action_dim,
+            state_dim,
+            policy_config.time_embed_dim,
+            hidden_dims,
+            policy_config.conv_kernel_size,
+            policy_config.groupnorm_n_groups,
+            policy_config.cond_predict_scale,
+        )
+    return FlowMatchingPolicyModel(
+        predictor,
+        state_dim=state_dim,
+        action_dim=action_dim,
+        chunk_size=chunk_size,
+    )
