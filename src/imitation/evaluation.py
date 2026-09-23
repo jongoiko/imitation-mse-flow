@@ -121,12 +121,21 @@ def log_checkpoint_artifact(model: BasePolicyModel, step: int) -> None:
 
 def get_action_chunk(
     model: BasePolicyModel,
-    obs: np.ndarray,
+    obs_history: list[np.ndarray],
     normalizer: Normalizer,
     device: torch.device,
     flow_num_steps: int,
 ) -> np.ndarray:
-    state = torch.from_numpy(normalizer.normalize_state(obs)).float().to(device)
+    if len(obs_history) < model.observation_horizon:
+        obs_history = (model.observation_horizon - len(obs_history)) * [
+            obs_history[0]
+        ] + obs_history
+    assert len(obs_history) == model.observation_horizon
+    state = (
+        torch.from_numpy(normalizer.normalize_state(np.vstack(obs_history)).flatten())
+        .float()
+        .to(device)
+    )
     with torch.no_grad():
         pred_chunk = (
             model.sample_actions(state.unsqueeze(0), num_steps=flow_num_steps)
@@ -152,6 +161,7 @@ def run_eval_pusht(
     action_high = env.action_space.high
     for ep_idx in range(NUM_EVAL_EPISODES):
         obs, _ = env.reset(seed=ep_idx)
+        obs_history = [obs]
         done = False
         chunk_index = chunk_size
         action_chunk: np.ndarray | None = None
@@ -160,14 +170,16 @@ def run_eval_pusht(
         save_video = ep_idx < num_video_episodes
         terminated = False
         while not done:
+            obs_history = obs_history[-model.observation_horizon :]
             if action_chunk is None or chunk_index >= chunk_size:
                 action_chunk = get_action_chunk(
-                    model, obs, normalizer, device, flow_num_steps
+                    model, obs_history, normalizer, device, flow_num_steps
                 )
                 action_chunk = np.clip(action_chunk, action_low, action_high)
                 chunk_index = 0
             action = action_chunk[chunk_index]
             obs, reward, terminated, truncated, _ = env.step(action.astype(np.float32))
+            obs_history.append(obs)
             if save_video:
                 frame = env.render()
                 frame = resize_frame(frame, video_size)
@@ -217,6 +229,7 @@ def run_eval_robomimic(
         # hack that is necessary for robosuite tasks for deterministic action playback
         obs = env.reset_to(state_dict)
         obs = np.concat(tuple([obs[key] for key in ROBOMIMIC_OBS_KEYS]))
+        obs_history = [obs]
         chunk_index = chunk_size
         action_chunk: np.ndarray | None = None
         frames: list[np.ndarray] = []
@@ -228,15 +241,17 @@ def run_eval_robomimic(
             and not env.is_success()["task"]
             and step_num < ROBOMIMIC_HORIZON
         ):
+            obs_history = obs_history[-model.observation_horizon :]
             if action_chunk is None or chunk_index >= chunk_size:
                 action_chunk = get_action_chunk(
-                    model, obs, normalizer, device, flow_num_steps
+                    model, obs_history, normalizer, device, flow_num_steps
                 )
                 action_chunk = np.clip(action_chunk, -1, 1)
                 chunk_index = 0
             action = action_chunk[chunk_index]
             obs, reward, _, _ = env.step(action.astype(np.float32))
             obs = np.concat(tuple([obs[key] for key in ROBOMIMIC_OBS_KEYS]))
+            obs_history.append(obs)
             if save_video:
                 frame = env.render(
                     "rgb_array", height=video_size[1], width=video_size[0]

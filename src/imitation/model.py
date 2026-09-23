@@ -16,14 +16,20 @@ class BasePolicyModel(nn.Module, metaclass=abc.ABCMeta):
     state_dim: int
     action_dim: int
     action_chunk_horizon: int
+    observation_horizon: int
 
     def __init__(
-        self, state_dim: int, action_dim: int, action_chunk_horizon: int
+        self,
+        state_dim: int,
+        action_dim: int,
+        action_chunk_horizon: int,
+        observation_horizon: int,
     ) -> None:
         super().__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_chunk_horizon = action_chunk_horizon
+        self.observation_horizon = observation_horizon
 
     @abc.abstractmethod
     def compute_loss(
@@ -62,9 +68,12 @@ class MSEPolicyModel(BasePolicyModel):
         state_dim: int,
         action_dim: int,
         action_chunk_horizon: int,
+        observation_horizon: int,
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
-        super().__init__(state_dim, action_dim, action_chunk_horizon)
+        super().__init__(
+            state_dim, action_dim, action_chunk_horizon, observation_horizon
+        )
         self.mlp = make_relu_mlp(
             state_dim, action_chunk_horizon * action_dim, hidden_dims
         )
@@ -105,8 +114,11 @@ class FlowMatchingPolicyModel(BasePolicyModel):
         state_dim: int,
         action_dim: int,
         action_chunk_horizon: int,
+        observation_horizon: int,
     ) -> None:
-        super().__init__(state_dim, action_dim, action_chunk_horizon)
+        super().__init__(
+            state_dim, action_dim, action_chunk_horizon, observation_horizon
+        )
         self.vel_predictor = vel_predictor
 
     def compute_loss(
@@ -176,13 +188,16 @@ def build_policy(
     state_dim: int,
     action_dim: int,
     chunk_size: int,
+    observation_horizon: int,
     hidden_dims: tuple[int, ...] = (128, 128),
 ) -> BasePolicyModel:
+    state_dim = state_dim * observation_horizon
     if isinstance(policy_config, MSEPolicy):
         return MSEPolicyModel(
             state_dim=state_dim,
             action_dim=action_dim,
             action_chunk_horizon=chunk_size,
+            observation_horizon=observation_horizon,
             hidden_dims=hidden_dims,
         )
     if policy_config.architecture == "mlp":
@@ -207,4 +222,5 @@ def build_policy(
         state_dim=state_dim,
         action_dim=action_dim,
         action_chunk_horizon=chunk_size,
+        observation_horizon=observation_horizon,
     )

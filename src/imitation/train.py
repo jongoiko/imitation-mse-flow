@@ -46,6 +46,8 @@ class TrainConfig:
     policy: MSEPolicy | FlowPolicy = field(default_factory=MSEPolicy)
     # The action chunk size.
     chunk_size: int = 8
+    # The horizon of past observations/states to pass as input to the policy.
+    obs_horizon: int = 1
     # The batch size.
     batch_size: int = 512
     # The AdamW learning rate.
@@ -171,6 +173,7 @@ def run_training(config: TrainConfig) -> None:
         actions,
         episode_ends,
         chunk_size=config.chunk_size,
+        observation_horizon=config.obs_horizon,
         normalizer=normalizer,
     )
 
@@ -186,6 +189,7 @@ def run_training(config: TrainConfig) -> None:
         state_dim=states.shape[1],
         action_dim=actions.shape[1],
         chunk_size=config.chunk_size,
+        observation_horizon=config.obs_horizon,
         hidden_dims=config.hidden_dims,
     ).to(device)
     model: BasePolicyModel = torch.compile(model)  # type: ignore
