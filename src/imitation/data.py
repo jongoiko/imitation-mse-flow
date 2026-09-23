@@ -118,18 +118,18 @@ def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     with h5py.File(path, "r") as f:
         for demo_idx in f["data"]:
             demo = f["data"][demo_idx]
-            episode_end_step = np.argmax(demo["dones"][:]) + 1
+            episode_end_step = demo["actions"][...].shape[0]
             episode_ends.append(episode_end_step)
             actions.append(demo["actions"][:episode_end_step])
             states.append(
                 np.hstack(
                     tuple(
                         [
-                            demo["obs"][key][:episode_end_step] # type: ignore
+                            demo["obs"][key][:episode_end_step]  # type: ignore
                             for key in ROBOMIMIC_OBS_KEYS
                         ]
                     )
-                ) # type: ignore
+                )  # type: ignore
             )
     return np.vstack(states), np.vstack(actions), np.cumsum(episode_ends)
 
