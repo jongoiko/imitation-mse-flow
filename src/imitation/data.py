@@ -134,15 +134,19 @@ def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     return np.vstack(states), np.vstack(actions), np.cumsum(episode_ends)
 
 
-def build_valid_indices(episode_ends: np.ndarray, chunk_size: int) -> np.ndarray:
+def build_valid_indices(
+    episode_ends: np.ndarray, chunk_size: int
+) -> tuple[np.ndarray, np.ndarray]:
     starts = np.concatenate(([0], episode_ends[:-1]))
     indices: list[int] = []
+    history_len: list[int] = []
     for start, end in zip(starts, episode_ends, strict=True):
         last_start = end - chunk_size
         if last_start < start:
             continue
         indices.extend(range(start, last_start + 1))
-    return np.asarray(indices, dtype=np.int64)
+        history_len.extend(range(1, last_start - start + 2))
+    return np.asarray(indices, dtype=np.int64), np.asarray(history_len, dtype=np.int64)
 
 
 class ActionChunkDataset(Dataset):
@@ -154,27 +158,40 @@ class ActionChunkDataset(Dataset):
         actions: np.ndarray,
         episode_ends: np.ndarray,
         chunk_size: int,
+        observation_horizon: int,
         normalizer: Normalizer | None = None,
     ) -> None:
         self.states = states
         self.actions = actions
         self.chunk_size = chunk_size
         self.normalizer = normalizer
-        self.indices = build_valid_indices(episode_ends, chunk_size)
+        self.observation_horizon = observation_horizon
+        self.indices, self.history_len = build_valid_indices(episode_ends, chunk_size)
 
     def __len__(self) -> int:
         return len(self.indices)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         t = int(self.indices[idx])
-        state = self.states[t]
+        history_len = int(self.history_len[idx])
         action_chunk = self.actions[t : t + self.chunk_size]
-
+        if history_len < self.observation_horizon:
+            # We need to pad the observation history
+            first_t = t - history_len + 1
+            first = self.states[[first_t]]
+            states = np.vstack(
+                [
+                    np.repeat(first, self.observation_horizon - history_len, axis=0),
+                    self.states[first_t : t + 1],
+                ]
+            )
+        else:
+            states = self.states[t - self.observation_horizon + 1 : t + 1]
+        assert states.shape[0] == self.observation_horizon
         if self.normalizer is not None:
-            state = self.normalizer.normalize_state(state)
+            states = self.normalizer.normalize_state(states)
             action_chunk = self.normalizer.normalize_action(action_chunk)
-
         return (
-            torch.from_numpy(state).float(),
+            torch.from_numpy(states.flatten()).float(),
             torch.from_numpy(action_chunk).float(),
         )
