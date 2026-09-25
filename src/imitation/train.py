@@ -48,6 +48,9 @@ class TrainConfig:
     chunk_size: int = 8
     # The horizon of past observations/states to pass as input to the policy.
     obs_horizon: int = 1
+    # Whether to convert the 3D rotation component of the action space to the 6D
+    # representation of Zhou et al.
+    rot_to_6d: bool = False
     # The batch size.
     batch_size: int = 512
     # The AdamW learning rate.
@@ -114,6 +117,7 @@ def run_training_loop(
     dataset_path: Path,
     loader: DataLoader,
     model: BasePolicyModel,
+    rot_to_6d: bool,
     normalizer: Normalizer,
     logger: Logger,
     device: torch.device,
@@ -150,6 +154,7 @@ def run_training_loop(
                     num_flow_steps,
                     total_training_steps,
                     logger,
+                    rot_to_6d,
                 )
                 model.train()
             if total_training_steps % config.log_interval == 0:
@@ -165,7 +170,9 @@ def run_training(config: TrainConfig) -> None:
     print(f"Using device: {device}")
 
     dataset_path = download_dataset(config.task, config.data_dir)
-    states, actions, episode_ends = load_demonstrations(dataset_path)
+    states, actions, episode_ends = load_demonstrations(
+        dataset_path, axis_angle_to_rot6d=config.rot_to_6d
+    )
     normalizer = Normalizer.from_data(states, actions)
 
     dataset = ActionChunkDataset(
@@ -207,7 +214,14 @@ def run_training(config: TrainConfig) -> None:
     )
     logger = Logger(log_dir)
     total_training_steps = run_training_loop(
-        config, dataset_path, loader, model, normalizer, logger, device
+        config,
+        dataset_path,
+        loader,
+        model,
+        config.rot_to_6d,
+        normalizer,
+        logger,
+        device,
     )
     model.eval()
     evaluate_policy(
@@ -221,6 +235,7 @@ def run_training(config: TrainConfig) -> None:
         config.policy.flow_num_steps if isinstance(config.policy, FlowPolicy) else 0,
         total_training_steps,
         logger,
+        config.rot_to_6d,
     )
     logger.dump_logs()
 

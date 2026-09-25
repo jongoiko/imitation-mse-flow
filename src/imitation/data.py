@@ -11,6 +11,8 @@ import h5py
 import numpy as np
 import torch
 import zarr
+from imitation.rotation_conversions import axis_angle_to_matrix
+from imitation.rotation_conversions import matrix_to_rotation_6d
 from torch.utils.data import Dataset
 
 import robomimic.utils.file_utils as FileUtils
@@ -104,7 +106,14 @@ def download_dataset(task_name: str, dataset_dir: Path) -> Path:
     return dataset_path
 
 
-def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def convert_axis_angle_to_rot6d(axis_angle: np.ndarray) -> np.ndarray:
+    matrix = axis_angle_to_matrix(torch.as_tensor(axis_angle))
+    return matrix_to_rotation_6d(matrix).detach().numpy()
+
+
+def load_demonstrations(
+    path: Path, axis_angle_to_rot6d: bool = False
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if path.suffix == ".zarr":
         root = zarr.open(path, mode="r")
         states = np.asarray(root["data"]["state"][:], dtype=np.float32)
@@ -120,7 +129,16 @@ def load_demonstrations(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
             demo = f["data"][demo_idx]
             episode_end_step = demo["actions"][...].shape[0]
             episode_ends.append(episode_end_step)
-            actions.append(demo["actions"][:episode_end_step])
+            ep_actions: np.ndarray = demo["actions"][:episode_end_step]
+            if axis_angle_to_rot6d:
+                pos, rot, gripper = (
+                    ep_actions[..., :3],
+                    ep_actions[..., 3:6],
+                    ep_actions[..., 6:],
+                )
+                rot = convert_axis_angle_to_rot6d(rot)
+                ep_actions = np.hstack([pos, rot, gripper])
+            actions.append(ep_actions)
             states.append(
                 np.hstack(
                     tuple(

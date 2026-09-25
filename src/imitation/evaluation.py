@@ -17,6 +17,8 @@ import torch
 from imitation.data import Normalizer
 from imitation.data import ROBOMIMIC_OBS_KEYS
 from imitation.model import BasePolicyModel
+from imitation.rotation_conversions import matrix_to_axis_angle
+from imitation.rotation_conversions import rotation_6d_to_matrix
 from PIL import Image
 
 import robomimic.utils.env_utils as EnvUtils
@@ -197,6 +199,11 @@ def run_eval_pusht(
     return successes, rewards, videos
 
 
+def convert_rot6d_to_axis_angle(rot6d: np.ndarray) -> np.ndarray:
+    matrix = rotation_6d_to_matrix(torch.as_tensor(rot6d))
+    return matrix_to_axis_angle(matrix).detach().numpy()
+
+
 def run_eval_robomimic(
     model: BasePolicyModel,
     dataset_path: Path,
@@ -206,6 +213,7 @@ def run_eval_robomimic(
     video_size: tuple[int, int],
     num_video_episodes: int,
     flow_num_steps: int,
+    rot_to_6d: bool,
 ) -> tuple[list[bool], list[float], list[wandb.Video]]:
     obs_spec = dict(
         obs=dict(
@@ -246,6 +254,14 @@ def run_eval_robomimic(
                 action_chunk = get_action_chunk(
                     model, obs_history, normalizer, device, flow_num_steps
                 )
+                if rot_to_6d:
+                    pos, rot, gripper = (
+                        action_chunk[..., :3],
+                        action_chunk[..., 3:9],
+                        action_chunk[..., 9:],
+                    )
+                    rot = convert_rot6d_to_axis_angle(rot)
+                    action_chunk = np.hstack([pos, rot, gripper])
                 action_chunk = np.clip(action_chunk, -1, 1)
                 chunk_index = 0
             action = action_chunk[chunk_index]
@@ -280,6 +296,7 @@ def evaluate_policy(
     flow_num_steps: int,
     step: int,
     logger: Logger,
+    rot_to_6d: bool,
 ) -> None:
     """Evaluate a policy in environment and log results to Weights & Biases.
 
@@ -330,6 +347,7 @@ def evaluate_policy(
             video_size,
             num_video_episodes,
             flow_num_steps,
+            rot_to_6d,
         )
     log_data: dict[str, float | wandb.Video] = {
         "eval/mean_reward": float(np.mean(rewards)),
