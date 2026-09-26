@@ -1,6 +1,7 @@
 """Train and evaluate a behavior cloning policy."""
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
@@ -16,6 +17,7 @@ from imitation.data import ActionChunkDataset
 from imitation.data import download_dataset
 from imitation.data import load_demonstrations
 from imitation.data import Normalizer
+from imitation.ema import EMAModel
 from imitation.evaluation import evaluate_policy
 from imitation.evaluation import Logger
 from imitation.model import BasePolicyModel
@@ -51,6 +53,9 @@ class TrainConfig:
     # Whether to convert the 3D rotation component of the action space to the 6D
     # representation of Zhou et al.
     rot_to_6d: bool = False
+    # Whether to use an Exponential Moving Average (EMA) of model weights for
+    # policy evaluation.
+    use_ema: bool = False
     # The batch size.
     batch_size: int = 512
     # The AdamW learning rate.
@@ -119,6 +124,7 @@ def run_training_loop(
     model: BasePolicyModel,
     rot_to_6d: bool,
     normalizer: Normalizer,
+    ema_model: EMAModel | None,
     logger: Logger,
     device: torch.device,
 ) -> int:
@@ -130,14 +136,20 @@ def run_training_loop(
     compute_loss = torch.compile(model.compute_loss)
     for _ in range(config.num_epochs):
         for batch in loader:
+            model.train()
             state, action_chunk = batch
             optimizer.zero_grad()
             loss = compute_loss(state.to(device), action_chunk.to(device))
             loss.backward()
             optimizer.step()
+            if ema_model is not None:
+                ema_model.step(model)
             total_training_steps += 1
             if total_training_steps % config.eval_interval == 0:
-                model.eval()
+                eval_model: BasePolicyModel = (
+                    ema_model.averaged_model if ema_model is not None else model
+                )  # type: ignore
+                eval_model.eval()
                 num_flow_steps = (
                     config.policy.flow_num_steps
                     if isinstance(config.policy, FlowPolicy)
@@ -145,7 +157,7 @@ def run_training_loop(
                 )
                 evaluate_policy(
                     dataset_path,
-                    model,
+                    eval_model,
                     normalizer,
                     device,
                     config.chunk_size,
@@ -156,7 +168,6 @@ def run_training_loop(
                     logger,
                     rot_to_6d,
                 )
-                model.train()
             if total_training_steps % config.log_interval == 0:
                 logger.log(
                     {"train/loss": float(loss.item())}, step=total_training_steps
@@ -213,6 +224,9 @@ def run_training(config: TrainConfig) -> None:
         project=config.wandb_project, config=config_to_dict(config), name=exp_name
     )
     logger = Logger(log_dir)
+
+    ema_model = EMAModel(copy.deepcopy(model)) if config.use_ema else None
+
     total_training_steps = run_training_loop(
         config,
         dataset_path,
@@ -220,13 +234,17 @@ def run_training(config: TrainConfig) -> None:
         model,
         config.rot_to_6d,
         normalizer,
+        ema_model,
         logger,
         device,
     )
-    model.eval()
+    eval_model: BasePolicyModel = (
+        ema_model.averaged_model if ema_model is not None else model
+    )  # type: ignore
+    eval_model.eval()
     evaluate_policy(
         dataset_path,
-        model,
+        eval_model,
         normalizer,
         device,
         config.chunk_size,
