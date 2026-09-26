@@ -20,6 +20,7 @@ from imitation.model import BasePolicyModel
 from imitation.rotation_conversions import matrix_to_axis_angle
 from imitation.rotation_conversions import rotation_6d_to_matrix
 from PIL import Image
+from tqdm import tqdm
 
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
@@ -161,7 +162,7 @@ def run_eval_pusht(
     env = gym.make(PUSHT_ENV_ID, obs_type="state", render_mode="rgb_array")
     action_low = env.action_space.low
     action_high = env.action_space.high
-    for ep_idx in range(NUM_EVAL_EPISODES):
+    for ep_idx in tqdm(range(NUM_EVAL_EPISODES), desc="Evaluating PushT policy"):
         obs, _ = env.reset(seed=ep_idx)
         obs_history = [obs]
         done = False
@@ -231,7 +232,7 @@ def run_eval_robomimic(
         use_image_obs=False,
     )  # type: ignore
     successes, rewards, videos = [], [], []
-    for ep_idx in range(NUM_EVAL_EPISODES):
+    for ep_idx in tqdm(range(NUM_EVAL_EPISODES), desc="Evaluating robomimic policy"):
         obs = env.reset()  # TODO: Use seed ep_idx to reset
         state_dict = env.get_state()
         # hack that is necessary for robosuite tasks for deterministic action playback
