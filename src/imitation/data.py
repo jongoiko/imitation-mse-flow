@@ -1,7 +1,6 @@
 """Dataset utilities."""
 from __future__ import annotations
 
-import os
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -14,20 +13,22 @@ import zarr
 from imitation.rotation_conversions import axis_angle_to_matrix
 from imitation.rotation_conversions import matrix_to_rotation_6d
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
-import robomimic.utils.file_utils as FileUtils
-from robomimic import DATASET_REGISTRY
 # the dataset registry can be found at robomimic/__init__.py
 
 PUSHT_URL = "https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip"
+ROBOMIMIC_URL = (
+    "https://diffusion-policy.cs.columbia.edu/data/training/robomimic_lowdim.zip"
+)
 
 TASK_PATHS = {
     "pusht": Path("pusht") / "pusht_cchi_v7_replay.zarr",
-    "robomimic/lift": Path("robomimic") / "low_dim_lift.hdf5",
-    "robomimic/can": Path("robomimic") / "low_dim_can.hdf5",
-    "robomimic/square": Path("robomimic") / "low_dim_square.hdf5",
-    "robomimic/tool_hang": Path("robomimic") / "low_dim_tool_hang.hdf5",
-    "robomimic/transport": Path("robomimic") / "low_dim_transport.hdf5",
+    "robomimic/lift": Path("robomimic") / "datasets/lift/ph/low_dim_abs.hdf5",
+    "robomimic/can": Path("robomimic") / "datasets/can/ph/low_dim_abs.hdf5",
+    "robomimic/square": Path("robomimic") / "datasets/square/ph/low_dim_abs.hdf5",
+    "robomimic/tool_hang": Path("robomimic") / "datasets/tool_hang/ph/low_dim_abs.hdf5",
+    "robomimic/transport": Path("robomimic") / "datasets/transport/ph/low_dim_abs.hdf5",
 }
 
 TASK_NAMES = list(TASK_PATHS.keys())
@@ -38,6 +39,15 @@ ROBOMIMIC_OBS_KEYS = [
     "robot0_eef_quat",
     "robot0_gripper_qpos",
 ]
+
+
+class TqdmUpTo(tqdm):
+    def update_to(
+        self, b: int = 1, bsize: int = 1, tsize: int | None = None
+    ) -> bool | None:
+        if tsize is not None:
+            self.total = tsize
+        return self.update(b * bsize - self.n)
 
 
 @dataclass(frozen=True)
@@ -88,21 +98,31 @@ def download_dataset(task_name: str, dataset_dir: Path) -> Path:
     if task_name == "pusht":
         zip_path = dataset_dir / "pusht.zip"
         if not zip_path.exists():
-            print("Downloading PushT dataset...")
-            urllib.request.urlretrieve(PUSHT_URL, zip_path)
+            with TqdmUpTo(
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                miniters=1,
+                desc="Downloading PushT dataset...",
+            ) as t:
+                urllib.request.urlretrieve(PUSHT_URL, zip_path, reporthook=t.update_to)
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(dataset_dir)
         return dataset_path
 
     # Robomimic dataset
-    robomimic_task = task_name.split("/")[1]
-    print(f"Downloading robomimic {robomimic_task} dataset...")
-    dataset_type = "ph"  # proficient human
-    hdf5_type = "low_dim"
-    url = DATASET_REGISTRY[robomimic_task][dataset_type][hdf5_type]["url"]
-    filename = url.split("/")[-1]
-    FileUtils.download_url(url=url, download_dir=str(dataset_path.parent))
-    os.rename(dataset_dir / TASK_PATHS[task_name].parent / filename, dataset_path)
+    zip_path = dataset_dir / "robomimic.zip"
+    if not zip_path.exists():
+        with TqdmUpTo(
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            miniters=1,
+            desc="Downloading robomimic datasets...",
+        ) as t:
+            urllib.request.urlretrieve(ROBOMIMIC_URL, zip_path, reporthook=t.update_to)
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(dataset_dir)
     return dataset_path
 
 
