@@ -224,6 +224,7 @@ def run_eval_robomimic(
     )
     ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs=obs_spec)
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path)
+    env_meta["env_kwargs"]["controller_configs"]["control_delta"] = False
     env = EnvUtils.create_env_from_metadata(
         env_meta=env_meta,
         env_name=env_meta["env_name"],
