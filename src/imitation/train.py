@@ -46,8 +46,10 @@ class TrainConfig:
     data_dir: Path = Path("data")
     # The policy type -- either MSE or flow.
     policy: MSEPolicy | FlowPolicy = field(default_factory=MSEPolicy)
-    # The action chunk size.
-    chunk_size: int = 8
+    # The predicted action chunk size. Must be >= exec_chunk_size.
+    pred_chunk_size: int = 8
+    # The executed action chunk size. Must be <= pred_chunk_size.
+    exec_chunk_size: int = 8
     # The horizon of past observations/states to pass as input to the policy.
     obs_horizon: int = 1
     # Whether to convert the 3D rotation component of the action space to the 6D
@@ -160,7 +162,7 @@ def run_training_loop(
                     eval_model,
                     normalizer,
                     device,
-                    config.chunk_size,
+                    config.exec_chunk_size,
                     config.video_size,
                     config.num_video_episodes,
                     num_flow_steps,
@@ -182,7 +184,7 @@ def run_training(config: TrainConfig) -> None:
 
     dataset_path = download_dataset(config.task, config.data_dir)
     states, actions, episode_ends = load_demonstrations(
-        dataset_path, config.chunk_size, axis_angle_to_rot6d=config.rot_to_6d
+        dataset_path, config.pred_chunk_size, axis_angle_to_rot6d=config.rot_to_6d
     )
     normalizer = Normalizer.from_data(states, actions)
 
@@ -190,7 +192,7 @@ def run_training(config: TrainConfig) -> None:
         states,
         actions,
         episode_ends,
-        chunk_size=config.chunk_size,
+        chunk_size=config.pred_chunk_size,
         observation_horizon=config.obs_horizon,
         normalizer=normalizer,
     )
@@ -206,7 +208,7 @@ def run_training(config: TrainConfig) -> None:
         config.policy,
         state_dim=states.shape[1],
         action_dim=actions.shape[1],
-        chunk_size=config.chunk_size,
+        chunk_size=config.pred_chunk_size,
         observation_horizon=config.obs_horizon,
         hidden_dims=config.hidden_dims,
     ).to(device)
@@ -247,7 +249,7 @@ def run_training(config: TrainConfig) -> None:
         eval_model,
         normalizer,
         device,
-        config.chunk_size,
+        config.exec_chunk_size,
         config.video_size,
         config.num_video_episodes,
         config.policy.flow_num_steps if isinstance(config.policy, FlowPolicy) else 0,

@@ -54,13 +54,13 @@ class Logger:
         self.rows.append(copy.deepcopy(row))
 
     def dump_logs(self) -> None:
-        fields = set(
+        fields_set = set(
             k
             for row in self.rows
             for k, v in row.items()
             if not isinstance(v, self.CSV_DISALLOWED_TYPES)
         )
-        fields = list(fields)
+        fields = list(fields_set)
         with self.csv_path.open("w") as f:
             f.write(",".join(fields) + "\n")
             for row in self.rows:
