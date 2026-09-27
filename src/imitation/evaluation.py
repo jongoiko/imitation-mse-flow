@@ -264,7 +264,6 @@ def run_eval_robomimic(
                     )
                     rot = convert_rot6d_to_axis_angle(rot)
                     action_chunk = np.hstack([pos, rot, gripper])
-                action_chunk = np.clip(action_chunk, -1, 1)
                 chunk_index = 0
             action = action_chunk[chunk_index]
             obs, reward, _, _ = env.step(action.astype(np.float32))
