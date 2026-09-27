@@ -132,7 +132,7 @@ def convert_axis_angle_to_rot6d(axis_angle: np.ndarray) -> np.ndarray:
 
 
 def load_demonstrations(
-    path: Path, axis_angle_to_rot6d: bool = False
+    path: Path, chunk_size: int, axis_angle_to_rot6d: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if path.suffix == ".zarr":
         root = zarr.open(path, mode="r")
@@ -144,11 +144,12 @@ def load_demonstrations(
         "Path suffix should be .zarr (PushT) or .hdf5 (robomimic)"
     )
     states, actions, episode_ends = [], [], []
+    pad_steps = chunk_size - 1
     with h5py.File(path, "r") as f:
         for demo_idx in f["data"]:
             demo = f["data"][demo_idx]
             episode_end_step = demo["actions"][...].shape[0]
-            episode_ends.append(episode_end_step)
+            episode_ends.append(episode_end_step + pad_steps)
             ep_actions: np.ndarray = demo["actions"][:episode_end_step]
             if axis_angle_to_rot6d:
                 pos, rot, gripper = (
@@ -158,17 +159,22 @@ def load_demonstrations(
                 )
                 rot = convert_axis_angle_to_rot6d(rot)
                 ep_actions = np.hstack([pos, rot, gripper])
-            actions.append(ep_actions)
-            states.append(
-                np.hstack(
-                    tuple(
-                        [
-                            demo["obs"][key][:episode_end_step]  # type: ignore
-                            for key in ROBOMIMIC_OBS_KEYS
-                        ]
-                    )
-                )  # type: ignore
+            ep_actions = np.vstack(
+                [ep_actions, np.repeat(ep_actions[[-1]], pad_steps, axis=0)]
             )
+            actions.append(ep_actions)
+            ep_states = np.hstack(
+                tuple(
+                    [
+                        demo["obs"][key][:episode_end_step]  # type: ignore
+                        for key in ROBOMIMIC_OBS_KEYS
+                    ]
+                )
+            )  # type: ignore
+            ep_states = np.vstack(
+                [ep_states, np.repeat(ep_states[[-1]], pad_steps, axis=0)]
+            )
+            states.append(ep_states)
     return np.vstack(states), np.vstack(actions), np.cumsum(episode_ends)
 
 

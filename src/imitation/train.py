@@ -182,7 +182,7 @@ def run_training(config: TrainConfig) -> None:
 
     dataset_path = download_dataset(config.task, config.data_dir)
     states, actions, episode_ends = load_demonstrations(
-        dataset_path, axis_angle_to_rot6d=config.rot_to_6d
+        dataset_path, config.chunk_size, axis_angle_to_rot6d=config.rot_to_6d
     )
     normalizer = Normalizer.from_data(states, actions)
 
