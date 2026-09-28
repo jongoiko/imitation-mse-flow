@@ -136,7 +136,7 @@ def run_training_loop(
     total_training_steps = 0
     model.train()
     compute_loss = torch.compile(model.compute_loss)
-    for _ in range(config.num_epochs):
+    for epoch_idx in range(config.num_epochs):
         for batch in loader:
             model.train()
             state, action_chunk = batch
@@ -167,12 +167,14 @@ def run_training_loop(
                     config.num_video_episodes,
                     num_flow_steps,
                     total_training_steps,
+                    epoch_idx,
                     logger,
                     rot_to_6d,
                 )
             if total_training_steps % config.log_interval == 0:
                 logger.log(
-                    {"train/loss": float(loss.item())}, step=total_training_steps
+                    {"train/loss": float(loss.item()), "epoch": epoch_idx},
+                    step=total_training_steps,
                 )
     return total_training_steps
 
@@ -254,6 +256,7 @@ def run_training(config: TrainConfig) -> None:
         config.num_video_episodes,
         config.policy.flow_num_steps if isinstance(config.policy, FlowPolicy) else 0,
         total_training_steps,
+        config.num_epochs,
         logger,
         config.rot_to_6d,
     )

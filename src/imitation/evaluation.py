@@ -296,6 +296,7 @@ def evaluate_policy(
     num_video_episodes: int,
     flow_num_steps: int,
     step: int,
+    epoch: int,
     logger: Logger,
     rot_to_6d: bool,
 ) -> None:
@@ -353,6 +354,7 @@ def evaluate_policy(
     log_data: dict[str, float | wandb.Video] = {
         "eval/mean_reward": float(np.mean(rewards)),
         "eval/success_rate": sum(successes) / len(successes),
+        "epoch": epoch,
     }
     for idx, video in enumerate(videos):
         log_data[f"eval/rollout_ep{idx}"] = video
