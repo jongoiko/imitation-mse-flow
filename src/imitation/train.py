@@ -70,6 +70,8 @@ class TrainConfig:
     hidden_dims: tuple[int, ...] = (256, 256, 256)
     # The number of epochs to train for.
     num_epochs: int = 3000
+    # How many episodes to run at each policy evaluation.
+    num_eval_episodes: int = 200
     # How often to run evaluation, measured in training steps.
     eval_interval: int = 100_000
     # How many videos to record during evaluation.
@@ -160,6 +162,7 @@ def run_training_loop(
                 evaluate_policy(
                     dataset_path,
                     eval_model,
+                    config.num_eval_episodes,
                     normalizer,
                     device,
                     config.exec_chunk_size,
@@ -249,6 +252,7 @@ def run_training(config: TrainConfig) -> None:
     evaluate_policy(
         dataset_path,
         eval_model,
+        config.num_eval_episodes,
         normalizer,
         device,
         config.exec_chunk_size,

@@ -29,7 +29,6 @@ import wandb
 
 
 PUSHT_ENV_ID = "gym_pusht/PushT-v0"
-NUM_EVAL_EPISODES = 100
 ROBOMIMIC_HORIZON = 700
 
 
@@ -151,6 +150,7 @@ def get_action_chunk(
 
 def run_eval_pusht(
     model: BasePolicyModel,
+    num_episodes: int,
     normalizer: Normalizer,
     device: torch.device,
     chunk_size: int,
@@ -162,7 +162,7 @@ def run_eval_pusht(
     env = gym.make(PUSHT_ENV_ID, obs_type="state", render_mode="rgb_array")
     action_low = env.action_space.low
     action_high = env.action_space.high
-    for ep_idx in tqdm(range(NUM_EVAL_EPISODES), desc="Evaluating PushT policy"):
+    for ep_idx in tqdm(range(num_episodes), desc="Evaluating PushT policy"):
         obs, _ = env.reset(seed=ep_idx)
         obs_history = [obs]
         done = False
@@ -207,6 +207,7 @@ def convert_rot6d_to_axis_angle(rot6d: np.ndarray) -> np.ndarray:
 
 def run_eval_robomimic(
     model: BasePolicyModel,
+    num_episodes: int,
     dataset_path: Path,
     normalizer: Normalizer,
     device: torch.device,
@@ -233,7 +234,7 @@ def run_eval_robomimic(
         use_image_obs=False,
     )  # type: ignore
     successes, rewards, videos = [], [], []
-    for ep_idx in tqdm(range(NUM_EVAL_EPISODES), desc="Evaluating robomimic policy"):
+    for ep_idx in tqdm(range(num_episodes), desc="Evaluating robomimic policy"):
         np.random.seed(ep_idx)
         obs = env.reset()
         state_dict = env.get_state()
@@ -290,6 +291,7 @@ def run_eval_robomimic(
 def evaluate_policy(
     dataset_path: Path,
     model: BasePolicyModel,
+    num_episodes: int,
     normalizer: Normalizer,
     device: torch.device,
     chunk_size: int,
@@ -333,6 +335,7 @@ def evaluate_policy(
     if dataset_path.suffix == ".zarr":  # PushT
         successes, rewards, videos = run_eval_pusht(
             model,
+            num_episodes,
             normalizer,
             device,
             chunk_size,
@@ -343,6 +346,7 @@ def evaluate_policy(
     else:  # robomimic
         successes, rewards, videos = run_eval_robomimic(
             model,
+            num_episodes,
             dataset_path,
             normalizer,
             device,
