@@ -234,7 +234,8 @@ def run_eval_robomimic(
     )  # type: ignore
     successes, rewards, videos = [], [], []
     for ep_idx in tqdm(range(NUM_EVAL_EPISODES), desc="Evaluating robomimic policy"):
-        obs = env.reset()  # TODO: Use seed ep_idx to reset
+        np.random.seed(ep_idx)
+        obs = env.reset()
         state_dict = env.get_state()
         # hack that is necessary for robosuite tasks for deterministic action playback
         obs = env.reset_to(state_dict)
