@@ -58,6 +58,8 @@ class TrainConfig:
     # Whether to use an Exponential Moving Average (EMA) of model weights for
     # policy evaluation.
     use_ema: bool = False
+    # Whether to use Automatic Mixed Precision (AMP) during training.
+    use_amp: bool = True
     # The batch size.
     batch_size: int = 512
     # The AdamW learning rate.
@@ -138,14 +140,19 @@ def run_training_loop(
     total_training_steps = 0
     model.train()
     compute_loss = torch.compile(model.compute_loss)
+    grad_scaler = torch.amp.GradScaler(enabled=config.use_amp)
     for epoch_idx in range(config.num_epochs):
         for batch in loader:
             model.train()
             state, action_chunk = batch
             optimizer.zero_grad()
-            loss = compute_loss(state.to(device), action_chunk.to(device))
-            loss.backward()
-            optimizer.step()
+            with torch.autocast(
+                device_type="cuda", dtype=torch.bfloat16, enabled=config.use_amp
+            ):
+                loss = compute_loss(state.to(device), action_chunk.to(device))
+            grad_scaler.scale(loss).backward()
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
             if ema_model is not None:
                 ema_model.step(model)
             total_training_steps += 1
