@@ -137,6 +137,9 @@ def run_training_loop(
     optimizer = torch.optim.AdamW(
         model.parameters(), config.lr, weight_decay=config.weight_decay
     )
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, config.num_epochs
+    )
     total_training_steps = 0
     model.train()
     compute_loss = torch.compile(model.compute_loss)
@@ -186,6 +189,7 @@ def run_training_loop(
                     {"train/loss": float(loss.item()), "epoch": epoch_idx},
                     step=total_training_steps,
                 )
+        lr_scheduler.step()
     return total_training_steps
 
 
