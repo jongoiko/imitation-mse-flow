@@ -187,7 +187,7 @@ def run_training_loop(
             grad_scaler.step(optimizer)
             grad_scaler.update()
             if ema_model is not None:
-                ema_model.step(model)
+                ema_model.step(model._orig_mod)
             total_training_steps += 1
             if total_training_steps % config.eval_interval == 0:
                 eval_model: BasePolicyModel = (
