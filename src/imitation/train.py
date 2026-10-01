@@ -213,6 +213,7 @@ def run_training_loop(
                     epoch_idx,
                     logger,
                     config.rot_to_6d,
+                    config.seed,
                 )
                 ckpt = make_checkpoint(
                     epoch_idx,
@@ -327,6 +328,7 @@ def run_training(config: TrainConfig) -> None:
         config.num_epochs,
         logger,
         config.rot_to_6d,
+        config.seed,
     )
     ckpt = make_checkpoint(
         config.num_epochs,

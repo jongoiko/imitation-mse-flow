@@ -162,13 +162,14 @@ def run_eval_pusht(
     video_size: tuple[int, int],
     num_video_episodes: int,
     flow_num_steps: int,
+    seed: int,
 ) -> tuple[list[bool], list[float], list[wandb.Video]]:
     successes, rewards, videos = [], [], []
     env = gym.make(PUSHT_ENV_ID, obs_type="state", render_mode="rgb_array")
     action_low = env.action_space.low
     action_high = env.action_space.high
     for ep_idx in tqdm(range(num_episodes), desc="Evaluating PushT policy"):
-        obs, _ = env.reset(seed=ep_idx)
+        obs, _ = env.reset(seed=num_episodes * seed + ep_idx)
         obs_history = [obs]
         done = False
         chunk_index = chunk_size
@@ -221,6 +222,7 @@ def run_eval_robomimic(
     num_video_episodes: int,
     flow_num_steps: int,
     rot_to_6d: bool,
+    seed: int,
 ) -> tuple[list[bool], list[float], list[wandb.Video]]:
     obs_spec = dict(
         obs=dict(
@@ -240,7 +242,7 @@ def run_eval_robomimic(
     )  # type: ignore
     successes, rewards, videos = [], [], []
     for ep_idx in tqdm(range(num_episodes), desc="Evaluating robomimic policy"):
-        np.random.seed(ep_idx)
+        np.random.seed(num_episodes * seed + ep_idx)
         obs = env.reset()
         state_dict = env.get_state()
         # hack that is necessary for robosuite tasks for deterministic action playback
@@ -307,6 +309,7 @@ def evaluate_policy(
     epoch: int,
     logger: Logger,
     rot_to_6d: bool,
+    seed: int,
 ) -> None:
     """Evaluate a policy in environment and log results to Weights & Biases.
 
@@ -347,6 +350,7 @@ def evaluate_policy(
             video_size,
             num_video_episodes,
             flow_num_steps,
+            seed,
         )
     else:  # robomimic
         successes, rewards, videos = run_eval_robomimic(
@@ -360,6 +364,7 @@ def evaluate_policy(
             num_video_episodes,
             flow_num_steps,
             rot_to_6d,
+            seed,
         )
     log_data: dict[str, float | wandb.Video] = {
         "eval/mean_reward": float(np.mean(rewards)),
