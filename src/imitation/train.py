@@ -19,6 +19,7 @@ from imitation.data import load_demonstrations
 from imitation.data import Normalizer
 from imitation.ema import EMAModel
 from imitation.evaluation import evaluate_policy
+from imitation.evaluation import log_checkpoint_artifact
 from imitation.evaluation import Logger
 from imitation.model import BasePolicyModel
 from imitation.model import build_policy
@@ -44,6 +45,8 @@ class TrainConfig:
     ] = "pusht"
     # The path to download the dataset to.
     data_dir: Path = Path("data")
+    # Path of checkpoint to resume training from. If not provided, a policy is trained from scratch.
+    checkpoint: Path | None = None
     # The policy type -- either MSE or flow.
     policy: MSEPolicy | FlowPolicy = field(default_factory=MSEPolicy)
     # The predicted action chunk size. Must be >= exec_chunk_size.
@@ -123,28 +126,55 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
     return data
 
 
+def make_checkpoint(
+    epoch: int,
+    model: BasePolicyModel,
+    ema_model: EMAModel | None,
+    optimizer: torch.optim.Optimizer,
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
+) -> dict:
+    return {
+        "epoch": epoch,
+        "model": model,
+        "ema_model": ema_model,
+        "optimizer": optimizer,
+        "lr_scheduler": lr_scheduler,
+    }
+
+
+def restore_checkpoint(
+    checkpoint: Any,
+) -> tuple[
+    int,
+    BasePolicyModel,
+    EMAModel | None,
+    torch.optim.Optimizer,
+    torch.optim.lr_scheduler.LRScheduler,
+]:
+    return tuple(
+        checkpoint[key]
+        for key in ["epoch", "model", "ema_model", "optimizer", "lr_scheduler"]
+    )
+
+
 def run_training_loop(
     config: TrainConfig,
+    epoch_idx: int,
     dataset_path: Path,
     loader: DataLoader,
     model: BasePolicyModel,
-    rot_to_6d: bool,
+    optimizer: torch.optim.Optimizer,
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
     normalizer: Normalizer,
     ema_model: EMAModel | None,
     logger: Logger,
     device: torch.device,
 ) -> int:
-    optimizer = torch.optim.AdamW(
-        model.parameters(), config.lr, weight_decay=config.weight_decay
-    )
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, config.num_epochs
-    )
     total_training_steps = 0
     model.train()
     compute_loss = torch.compile(model.compute_loss)
     grad_scaler = torch.amp.GradScaler(enabled=config.use_amp)
-    for epoch_idx in range(config.num_epochs):
+    for epoch_idx in range(epoch_idx, config.num_epochs):
         for batch in loader:
             model.train()
             state, action_chunk = batch
@@ -182,8 +212,16 @@ def run_training_loop(
                     total_training_steps,
                     epoch_idx,
                     logger,
-                    rot_to_6d,
+                    config.rot_to_6d,
                 )
+                ckpt = make_checkpoint(
+                    epoch_idx,
+                    model,
+                    ema_model,
+                    optimizer,
+                    lr_scheduler,
+                )  # type: ignore
+                log_checkpoint_artifact(ckpt, total_training_steps)
             if total_training_steps % config.log_interval == 0:
                 logger.log(
                     {"train/loss": float(loss.item()), "epoch": epoch_idx},
@@ -220,14 +258,29 @@ def run_training(config: TrainConfig) -> None:
         drop_last=True,
     )
 
-    model = build_policy(
-        config.policy,
-        state_dim=states.shape[1],
-        action_dim=actions.shape[1],
-        chunk_size=config.pred_chunk_size,
-        observation_horizon=config.obs_horizon,
-        hidden_dims=config.hidden_dims,
-    ).to(device)
+    if config.checkpoint is None:
+        model = build_policy(
+            config.policy,
+            state_dim=states.shape[1],
+            action_dim=actions.shape[1],
+            chunk_size=config.pred_chunk_size,
+            observation_horizon=config.obs_horizon,
+            hidden_dims=config.hidden_dims,
+        ).to(device)
+        ema_model = EMAModel(copy.deepcopy(model)) if config.use_ema else None
+        optimizer = torch.optim.AdamW(
+            model.parameters(), config.lr, weight_decay=config.weight_decay
+        )
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, config.num_epochs
+        )
+        epoch_idx = 0
+    else:
+        ckpt = torch.load(config.checkpoint, weights_only=False)
+        epoch_idx, model, ema_model, optimizer, lr_scheduler = restore_checkpoint(ckpt)
+        model = model.to(device)
+
+    model.train()
     model: BasePolicyModel = torch.compile(model)  # type: ignore
     total_trainable_params = sum(
         p.numel() for p in model.parameters() if p.requires_grad
@@ -243,14 +296,14 @@ def run_training(config: TrainConfig) -> None:
     )
     logger = Logger(log_dir)
 
-    ema_model = EMAModel(copy.deepcopy(model)) if config.use_ema else None
-
     total_training_steps = run_training_loop(
         config,
+        epoch_idx,
         dataset_path,
         loader,
         model,
-        config.rot_to_6d,
+        optimizer,
+        lr_scheduler,
         normalizer,
         ema_model,
         logger,
@@ -275,6 +328,14 @@ def run_training(config: TrainConfig) -> None:
         logger,
         config.rot_to_6d,
     )
+    ckpt = make_checkpoint(
+        config.num_epochs,
+        model,
+        ema_model,
+        optimizer,
+        lr_scheduler,
+    )
+    log_checkpoint_artifact(ckpt, total_training_steps)
     logger.dump_logs()
 
 

@@ -102,7 +102,9 @@ def encode_video(frames: list[np.ndarray], fps: int = 20) -> wandb.Video | None:
             pass
 
 
-def log_checkpoint_artifact(model: BasePolicyModel, step: int) -> None:
+def log_checkpoint_artifact(
+    data: dict, step: int, upload_to_wandb: bool = False
+) -> None:
     if wandb.run is None:
         raise RuntimeError("wandb.init did not create a run.")
 
@@ -110,7 +112,10 @@ def log_checkpoint_artifact(model: BasePolicyModel, step: int) -> None:
     checkpoint_dir = run_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = checkpoint_dir / f"checkpoint_step_{step}.pkl"
-    torch.save(model, checkpoint_path)
+    torch.save(data, checkpoint_path)
+
+    if not upload_to_wandb:
+        return
 
     artifact = wandb.Artifact(
         name=f"policy-checkpoint-{wandb.run.id}",
@@ -364,4 +369,3 @@ def evaluate_policy(
     for idx, video in enumerate(videos):
         log_data[f"eval/rollout_ep{idx}"] = video
     logger.log(log_data, step=step)
-    log_checkpoint_artifact(model, step=step)
