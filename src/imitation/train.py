@@ -129,6 +129,7 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
 def make_checkpoint(
     epoch: int,
     model: BasePolicyModel,
+    normalizer: Normalizer,
     ema_model: EMAModel | None,
     optimizer: torch.optim.Optimizer,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
@@ -136,6 +137,7 @@ def make_checkpoint(
     return {
         "epoch": epoch,
         "model": model,
+        "normalizer": normalizer,
         "ema_model": ema_model,
         "optimizer": optimizer,
         "lr_scheduler": lr_scheduler,
@@ -147,13 +149,21 @@ def restore_checkpoint(
 ) -> tuple[
     int,
     BasePolicyModel,
+    Normalizer,
     EMAModel | None,
     torch.optim.Optimizer,
     torch.optim.lr_scheduler.LRScheduler,
 ]:
     return tuple(
         checkpoint[key]
-        for key in ["epoch", "model", "ema_model", "optimizer", "lr_scheduler"]
+        for key in [
+            "epoch",
+            "model",
+            "normalizer",
+            "ema_model",
+            "optimizer",
+            "lr_scheduler",
+        ]
     )
 
 
@@ -218,10 +228,11 @@ def run_training_loop(
                 ckpt = make_checkpoint(
                     epoch_idx,
                     model,
+                    normalizer,
                     ema_model,
                     optimizer,
                     lr_scheduler,
-                )  # type: ignore
+                )
                 log_checkpoint_artifact(ckpt, total_training_steps)
             if total_training_steps % config.log_interval == 0:
                 logger.log(
@@ -278,7 +289,9 @@ def run_training(config: TrainConfig) -> None:
         epoch_idx = 0
     else:
         ckpt = torch.load(config.checkpoint, weights_only=False)
-        epoch_idx, model, ema_model, optimizer, lr_scheduler = restore_checkpoint(ckpt)
+        epoch_idx, model, normalizer, ema_model, optimizer, lr_scheduler = (
+            restore_checkpoint(ckpt)
+        )
         model = model.to(device)
 
     model.train()
@@ -333,6 +346,7 @@ def run_training(config: TrainConfig) -> None:
     ckpt = make_checkpoint(
         config.num_epochs,
         model,
+        normalizer,
         ema_model,
         optimizer,
         lr_scheduler,
