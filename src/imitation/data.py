@@ -54,31 +54,27 @@ class TqdmUpTo(tqdm):
 class Normalizer:
     """Feature-wise normalizer for states and actions."""
 
-    state_mean: np.ndarray
-    state_std: np.ndarray
-    action_mean: np.ndarray
-    action_std: np.ndarray
-
-    @staticmethod
-    def _safe_std(std: np.ndarray, eps: float = 1e-6) -> np.ndarray:
-        return np.maximum(std, eps)
+    state_max: np.ndarray
+    state_min: np.ndarray
+    action_max: np.ndarray
+    action_min: np.ndarray
 
     @classmethod
     def from_data(cls, states: np.ndarray, actions: np.ndarray) -> "Normalizer":
-        state_mean = states.mean(axis=0)
-        state_std = cls._safe_std(states.std(axis=0))
-        action_mean = actions.mean(axis=0)
-        action_std = cls._safe_std(actions.std(axis=0))
-        return cls(state_mean, state_std, action_mean, action_std)
+        state_max = states.max(axis=0)
+        state_min = states.min(axis=0)
+        action_max = actions.max(axis=0)
+        action_min = actions.min(axis=0)
+        return cls(state_max, state_min, action_max, action_min)
 
     def normalize_state(self, state: np.ndarray) -> np.ndarray:
-        return (state - self.state_mean) / self.state_std
+        return 2 * (state - self.state_min) / (self.state_max - self.state_min) - 1
 
     def normalize_action(self, action: np.ndarray) -> np.ndarray:
-        return (action - self.action_mean) / self.action_std
+        return 2 * (action - self.action_min) / (self.action_max - self.action_min) - 1
 
     def denormalize_action(self, action: np.ndarray) -> np.ndarray:
-        return action * self.action_std + self.action_mean
+        return (action + 1) * (self.action_max - self.action_min) / 2 + self.action_min
 
 
 def download_dataset(task_name: str, dataset_dir: Path) -> Path:
