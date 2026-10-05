@@ -17,7 +17,7 @@ class EMAModel:
         model: nn.Module,
         update_after_step: int = 0,
         inv_gamma: float = 1.0,
-        power: float = 4 / 5,
+        power: float = 3 / 4,
         min_value: float = 0.0,
         max_value: float = 0.9999,
     ) -> None:
