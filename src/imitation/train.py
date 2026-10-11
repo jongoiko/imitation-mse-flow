@@ -77,8 +77,8 @@ class TrainConfig:
     num_epochs: int = 3000
     # How many episodes to run at each policy evaluation.
     num_eval_episodes: int = 200
-    # How often to run evaluation, measured in training steps.
-    eval_interval: int = 100_000
+    # How often to run evaluation, measured in training epochs.
+    eval_interval: int = 1_000
     # How many videos to record during evaluation.
     num_video_episodes: int = 5
     # The size of recorded rollout videos.
@@ -199,46 +199,46 @@ def run_training_loop(
             if ema_model is not None:
                 ema_model.step(model._orig_mod)
             total_training_steps += 1
-            if total_training_steps % config.eval_interval == 0:
-                eval_model: BasePolicyModel = (
-                    ema_model.averaged_model if ema_model is not None else model
-                )  # type: ignore
-                eval_model.eval()
-                num_flow_steps = (
-                    config.policy.flow_num_steps
-                    if isinstance(config.policy, FlowPolicy)
-                    else 0
-                )
-                evaluate_policy(
-                    dataset_path,
-                    eval_model,
-                    config.num_eval_episodes,
-                    normalizer,
-                    device,
-                    config.exec_chunk_size,
-                    config.video_size,
-                    config.num_video_episodes,
-                    num_flow_steps,
-                    total_training_steps,
-                    epoch_idx,
-                    logger,
-                    config.rot_to_6d,
-                    config.seed,
-                )
-                ckpt = make_checkpoint(
-                    epoch_idx,
-                    model,
-                    normalizer,
-                    ema_model,
-                    optimizer,
-                    lr_scheduler,
-                )
-                log_checkpoint_artifact(ckpt, total_training_steps)
             if total_training_steps % config.log_interval == 0:
                 logger.log(
                     {"train/loss": float(loss.item()), "epoch": epoch_idx},
                     step=total_training_steps,
                 )
+        if epoch_idx % config.eval_interval == 0:
+            eval_model: BasePolicyModel = (
+                ema_model.averaged_model if ema_model is not None else model
+            )  # type: ignore
+            eval_model.eval()
+            num_flow_steps = (
+                config.policy.flow_num_steps
+                if isinstance(config.policy, FlowPolicy)
+                else 0
+            )
+            evaluate_policy(
+                dataset_path,
+                eval_model,
+                config.num_eval_episodes,
+                normalizer,
+                device,
+                config.exec_chunk_size,
+                config.video_size,
+                config.num_video_episodes,
+                num_flow_steps,
+                total_training_steps,
+                epoch_idx,
+                logger,
+                config.rot_to_6d,
+                config.seed,
+            )
+            ckpt = make_checkpoint(
+                epoch_idx,
+                model,
+                normalizer,
+                ema_model,
+                optimizer,
+                lr_scheduler,
+            )
+            log_checkpoint_artifact(ckpt, total_training_steps)
         lr_scheduler.step()
     return total_training_steps
 
