@@ -144,12 +144,17 @@ class FlowMatchingPolicyModel(BasePolicyModel):
         state: torch.Tensor,
         *,
         num_steps: int = 10,
+        initial_noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch_size = state.shape[0]
         device = state.device
-        action_chunk = torch.randn(
-            batch_size, self.action_chunk_horizon, self.action_dim
-        ).to(device)
+        action_chunk = (
+            torch.randn(batch_size, self.action_chunk_horizon, self.action_dim).to(
+                device
+            )
+            if initial_noise is None
+            else initial_noise.detach().to(device)
+        )
         with torch.no_grad():
             for time in torch.linspace(0, 1, num_steps + 1)[:-1].to(device):
                 pred_velocity = self.vel_predictor.predict_velocity(
