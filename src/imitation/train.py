@@ -25,6 +25,10 @@ from imitation.model import BasePolicyModel
 from imitation.model import build_policy
 from imitation.model import FlowPolicy
 from imitation.model import MSEPolicy
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import LinearLR
+from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.lr_scheduler import SequentialLR
 from torch.utils.data import DataLoader
 
 import wandb
@@ -67,6 +71,8 @@ class TrainConfig:
     batch_size: int = 512
     # The AdamW learning rate.
     lr: float = 3e-4
+    # The number of learning rate warmup steps.
+    lr_warmup_steps: int = 500
     # The AdamW weight decay.
     weight_decay: float = 0.0
     # The number and size of hidden layers: if using an MLP, then these are the
@@ -167,6 +173,26 @@ def restore_checkpoint(
     )
 
 
+def make_cosine_decay_scheduler_with_warmup(
+    optimizer: torch.optim.Optimizer, total_steps: int, warmup_steps: int
+) -> LRScheduler:
+    warmup = LinearLR(
+        optimizer,
+        start_factor=1e-8,
+        end_factor=1.0,
+        total_iters=warmup_steps,
+    )
+    cosine = CosineAnnealingLR(
+        optimizer,
+        T_max=total_steps - warmup_steps,
+    )
+    return SequentialLR(
+        optimizer,
+        schedulers=[warmup, cosine],
+        milestones=[warmup_steps],
+    )
+
+
 def run_training_loop(
     config: TrainConfig,
     epoch_idx: int,
@@ -204,6 +230,7 @@ def run_training_loop(
                     {"train/loss": float(loss.item()), "epoch": epoch_idx},
                     step=total_training_steps,
                 )
+            lr_scheduler.step()
         if epoch_idx % config.eval_interval == 0:
             eval_model: BasePolicyModel = (
                 ema_model.averaged_model if ema_model is not None else model
@@ -232,14 +259,13 @@ def run_training_loop(
             )
             ckpt = make_checkpoint(
                 epoch_idx,
-                model,
+                model._orig_mod,
                 normalizer,
                 ema_model,
                 optimizer,
                 lr_scheduler,
             )
             log_checkpoint_artifact(ckpt, total_training_steps)
-        lr_scheduler.step()
     return total_training_steps
 
 
@@ -269,6 +295,7 @@ def run_training(config: TrainConfig) -> None:
         shuffle=True,
         drop_last=True,
     )
+    total_training_steps = config.num_epochs * len(loader)
 
     if config.checkpoint is None:
         model = build_policy(
@@ -283,8 +310,8 @@ def run_training(config: TrainConfig) -> None:
         optimizer = torch.optim.AdamW(
             model.parameters(), config.lr, weight_decay=config.weight_decay
         )
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, config.num_epochs
+        lr_scheduler = make_cosine_decay_scheduler_with_warmup(
+            optimizer, total_training_steps, config.lr_warmup_steps
         )
         epoch_idx = 0
     else:
