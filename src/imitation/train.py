@@ -319,6 +319,7 @@ def run_training(config: TrainConfig) -> None:
         epoch_idx, model, normalizer, ema_model, optimizer, lr_scheduler = (
             restore_checkpoint(ckpt)
         )
+        epoch_idx += 1
         model = model.to(device)
 
     model.train()
