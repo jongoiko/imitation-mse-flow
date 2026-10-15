@@ -2,6 +2,7 @@ import abc
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
 import torch
 from einops import rearrange
 from imitation.flow_architectures import BaseVelocityPredictor
@@ -107,6 +108,7 @@ class FlowMatchingPolicyModel(BasePolicyModel):
     """Predicts action chunks with a flow matching loss."""
 
     vel_predictor: BaseVelocityPredictor
+    flow_trajectory: list[np.ndarray]
 
     def __init__(
         self,
@@ -120,6 +122,7 @@ class FlowMatchingPolicyModel(BasePolicyModel):
             state_dim, action_dim, action_chunk_horizon, observation_horizon
         )
         self.vel_predictor = vel_predictor
+        self.flow_trajectory = []
 
     def compute_loss(
         self,
@@ -148,19 +151,22 @@ class FlowMatchingPolicyModel(BasePolicyModel):
     ) -> torch.Tensor:
         batch_size = state.shape[0]
         device = state.device
+        self.flow_trajectory = []
         action_chunk = (
             torch.randn(batch_size, self.action_chunk_horizon, self.action_dim).to(
                 device
             )
             if initial_noise is None
-            else initial_noise.detach().to(device)
+            else initial_noise.detach().clone().to(device)
         )
         with torch.no_grad():
+            self.flow_trajectory.append(action_chunk.cpu().detach().numpy())
             for time in torch.linspace(0, 1, num_steps + 1)[:-1].to(device):
                 pred_velocity = self.vel_predictor.predict_velocity(
                     state, time.repeat(batch_size), action_chunk
                 )
                 action_chunk += pred_velocity / num_steps
+                self.flow_trajectory.append(action_chunk.cpu().detach().numpy())
         return action_chunk
 
 
