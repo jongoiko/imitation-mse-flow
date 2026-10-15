@@ -82,7 +82,7 @@ class TrainConfig:
     # The number of epochs to train for.
     num_epochs: int = 3000
     # How many episodes to run at each policy evaluation.
-    num_eval_episodes: int = 200
+    num_eval_episodes: int = 50
     # How often to run evaluation, measured in training epochs.
     eval_interval: int = 1_000
     # How many videos to record during evaluation.
