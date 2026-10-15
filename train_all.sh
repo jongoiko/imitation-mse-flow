@@ -20,7 +20,7 @@ do
         --weight-decay 1e-6 \
         --eval-interval 200000 \
         --use-ema True \
-        --num-epochs 4500 --eval-episodes 100 \
+        --num-epochs 4500 --eval-interval 100 \
         --num-video-episodes 10 \
         --hidden-dims "(256, 512, 1024)" \
         policy:flow-policy --policy.architecture unet \
