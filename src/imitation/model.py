@@ -138,9 +138,9 @@ class FlowMatchingPolicyModel(BasePolicyModel):
         )
         pred_velocity = self.vel_predictor.predict_velocity(state, time, interpolation)
         loss = nn.functional.mse_loss(
-            pred_velocity, action_chunk - noise, reduction="sum"
+            pred_velocity, action_chunk - noise, reduction="mean"
         )
-        return loss / batch_size
+        return loss
 
     def sample_actions(
         self,
