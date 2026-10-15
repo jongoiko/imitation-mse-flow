@@ -29,7 +29,6 @@ import wandb
 
 
 PUSHT_ENV_ID = "gym_pusht/PushT-v0"
-ROBOMIMIC_HORIZON = 700
 
 
 class Logger:
@@ -233,6 +232,7 @@ def run_eval_robomimic(
     ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs=obs_spec)
     env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path)
     env_meta["env_kwargs"]["controller_configs"]["control_delta"] = False
+    horizon = 700 if env_meta["env_name"] in ["ToolHang", "TwoArmTransport"] else 400
     env = EnvUtils.create_env_from_metadata(
         env_meta=env_meta,
         env_name=env_meta["env_name"],
@@ -255,11 +255,7 @@ def run_eval_robomimic(
         max_reward = 0.0
         save_video = ep_idx < num_video_episodes
         step_num = 0
-        while (
-            not env.is_done()
-            and not env.is_success()["task"]
-            and step_num < ROBOMIMIC_HORIZON
-        ):
+        while not env.is_done() and not env.is_success()["task"] and step_num < horizon:
             obs_history = obs_history[-model.observation_horizon :]
             if action_chunk is None or chunk_index >= chunk_size:
                 action_chunk = get_action_chunk(
