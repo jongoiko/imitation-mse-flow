@@ -12,8 +12,10 @@ dependencies = [
     "h5py>=3.16.0",
     "imageio>=2.37.4",
     "imageio-ffmpeg>=0.6.0",
+    "mujoco<3.10",
     "pillow>=12.3.0",
-    "robomimic>=0.3.0",
+    "robomimic",
+    "robosuite",
     "torch>=2.14.0",
     "tqdm>=4.70.0",
     "tyro>=1.0.16",
@@ -23,6 +25,8 @@ dependencies = [
 
 [tool.uv.sources]
 gym-pusht = { git = "https://github.com/jongoiko/gym-pusht.git" }
+robomimic = { git = "https://github.com/ARISE-Initiative/robomimic", rev = "8c0f810" }
+robosuite = { git = "https://github.com/ARISE-Initiative/robosuite", branch = "v1.4.1" }
 
 [dependency-groups]
 dev = [
